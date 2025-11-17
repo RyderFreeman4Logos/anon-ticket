@@ -146,6 +146,11 @@ pub mod storage {
             Self(value.into())
         }
 
+        pub fn parse(pid: &str) -> Result<Self, crate::PidFormatError> {
+            crate::validate_pid(pid)?;
+            Ok(Self::new(pid))
+        }
+
         pub fn as_str(&self) -> &str {
             &self.0
         }
@@ -269,6 +274,40 @@ pub mod storage {
 
 pub use storage::*;
 
+/// Required length (in hex characters) for externally supplied payment IDs.
+pub const PID_LENGTH: usize = 32;
+
+/// Errors emitted when user-supplied payment IDs fail validation.
+#[derive(Debug, Error, Clone, PartialEq, Eq)]
+pub enum PidFormatError {
+    #[error("payment id must be exactly {PID_LENGTH} hex characters")]
+    WrongLength,
+    #[error("payment id contains non-hex characters")]
+    NonHex,
+}
+
+/// Validates that the supplied PID matches the 32 hex-character contract.
+pub fn validate_pid(pid: &str) -> Result<(), PidFormatError> {
+    if pid.len() != PID_LENGTH {
+        return Err(PidFormatError::WrongLength);
+    }
+
+    if !pid.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(PidFormatError::NonHex);
+    }
+
+    Ok(())
+}
+
+/// Generates a deterministic SHA3-256 service token from the PID + TXID pair.
+pub fn derive_service_token(pid: &PaymentId, txid: &str) -> ServiceToken {
+    let mut hasher = Sha3_256::new();
+    hasher.update(pid.as_str().as_bytes());
+    hasher.update(txid.as_bytes());
+    let digest = hasher.finalize();
+    ServiceToken::new(hex_encode(digest))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -305,5 +344,26 @@ mod tests {
         let right = derive_pid_fingerprint("abcd");
         assert_eq!(left, right);
         assert_eq!(left.len(), 64);
+    }
+
+    #[test]
+    fn pid_validation_rejects_invalid_inputs() {
+        assert_eq!(validate_pid("deadbeef"), Err(PidFormatError::WrongLength));
+        assert_eq!(validate_pid("zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"), Err(PidFormatError::NonHex));
+        assert!(validate_pid("0123456789abcdef0123456789abcdef").is_ok());
+    }
+
+    #[test]
+    fn payment_id_parse_checks_format() {
+        assert!(PaymentId::parse("0123456789abcdef0123456789abcdef").is_ok());
+        assert!(PaymentId::parse("not-valid").is_err());
+    }
+
+    #[test]
+    fn service_token_derivation_is_deterministic() {
+        let pid = PaymentId::parse("0123456789abcdef0123456789abcdef").unwrap();
+        let a = derive_service_token(&pid, "tx1");
+        let b = derive_service_token(&pid, "tx1");
+        assert_eq!(a.as_str(), b.as_str());
     }
 }
