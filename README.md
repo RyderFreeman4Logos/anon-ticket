@@ -93,6 +93,14 @@ The server uses `BootstrapConfig` to load `DATABASE_URL` / `API_BIND_ADDRESS`
 before constructing `SeaOrmStorage`, so it inherits the same environment
 variables documented earlier.
 
+### PID Cache
+
+The API keeps an in-memory PID cache (`InMemoryPidCache`) that records PIDs
+observed via storage lookups. Negative entries allow the handler to short-circuit
+obvious 404 responses without hitting the database, while positive entries are
+recorded after successful claims. The abstraction lives in `anon_ticket_domain`
+so it can later be backed by Redis or a real Bloom filter.
+
 ## Monitor Service
 
 `anon_ticket_monitor` polls `monero-wallet-rpc`'s `get_transfers` endpoint,

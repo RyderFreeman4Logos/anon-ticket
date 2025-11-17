@@ -1,6 +1,6 @@
 //! Actix-Web API exposing the redemption endpoint.
 
-use std::io;
+use std::{io, sync::Arc};
 
 use actix_web::{
     http::StatusCode,
@@ -11,7 +11,8 @@ use actix_web::{
 use anon_ticket_domain::{
     derive_service_token,
     storage::{ClaimOutcome, NewServiceToken, PaymentStatus, PaymentStore, TokenStore},
-    BootstrapConfig, ConfigError, PaymentId, PidFormatError, StorageError,
+    BootstrapConfig, ConfigError, InMemoryPidCache, PaymentId, PidCache, PidFormatError,
+    StorageError,
 };
 use anon_ticket_storage::SeaOrmStorage;
 use chrono::Utc;
@@ -21,6 +22,7 @@ use thiserror::Error;
 #[derive(Clone)]
 struct AppState {
     storage: SeaOrmStorage,
+    cache: Arc<InMemoryPidCache>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -75,6 +77,10 @@ async fn redeem_handler(
 ) -> Result<HttpResponse, ApiError> {
     let pid = PaymentId::parse(&payload.pid)?;
 
+    if !state.cache.might_contain(&pid) {
+        return Err(ApiError::NotFound);
+    }
+
     match state.storage.claim_payment(&pid).await? {
         Some(outcome) => handle_success(&state, pid, outcome).await,
         None => handle_absent(&state, pid).await,
@@ -97,6 +103,7 @@ async fn handle_success(
             abuse_score: 0,
         })
         .await?;
+    state.cache.mark_present(&pid);
 
     Ok(HttpResponse::Ok().json(RedeemResponse {
         status: "success".to_string(),
@@ -108,9 +115,18 @@ async fn handle_success(
 async fn handle_absent(state: &AppState, pid: PaymentId) -> Result<HttpResponse, ApiError> {
     let maybe_payment = state.storage.find_payment(&pid).await?;
     match maybe_payment {
-        Some(record) if record.status == PaymentStatus::Claimed => Err(ApiError::AlreadyClaimed),
-        Some(_) => Err(ApiError::NotFound),
-        None => Err(ApiError::NotFound),
+        Some(record) if record.status == PaymentStatus::Claimed => {
+            state.cache.mark_present(&pid);
+            Err(ApiError::AlreadyClaimed)
+        }
+        Some(_) => {
+            state.cache.mark_present(&pid);
+            Err(ApiError::NotFound)
+        }
+        None => {
+            state.cache.mark_absent(&pid);
+            Err(ApiError::NotFound)
+        }
     }
 }
 
@@ -137,7 +153,8 @@ enum BootstrapError {
 async fn run() -> Result<(), BootstrapError> {
     let config = BootstrapConfig::load_from_env()?;
     let storage = SeaOrmStorage::connect(config.database_url()).await?;
-    let state = AppState { storage };
+    let cache = Arc::new(InMemoryPidCache::default());
+    let state = AppState { storage, cache };
 
     HttpServer::new(move || {
         App::new()
@@ -168,11 +185,16 @@ mod tests {
             .expect("storage inits")
     }
 
+    fn with_cache(storage: SeaOrmStorage) -> AppState {
+        AppState {
+            storage,
+            cache: Arc::new(InMemoryPidCache::default()),
+        }
+    }
+
     #[actix_web::test]
     async fn rejects_invalid_pid_format() {
-        let state = AppState {
-            storage: storage().await,
-        };
+        let state = with_cache(storage().await);
         let app = test::init_service(
             App::new()
                 .app_data(Data::new(state))
@@ -191,9 +213,7 @@ mod tests {
 
     #[actix_web::test]
     async fn returns_not_found_when_pid_missing() {
-        let state = AppState {
-            storage: storage().await,
-        };
+        let state = with_cache(storage().await);
         let app = test::init_service(
             App::new()
                 .app_data(Data::new(state))
@@ -226,7 +246,7 @@ mod tests {
 
         let app = test::init_service(
             App::new()
-                .app_data(Data::new(AppState { storage }))
+                .app_data(Data::new(with_cache(storage)))
                 .route("/api/v1/redeem", web::post().to(redeem_handler)),
         )
         .await;
@@ -261,7 +281,7 @@ mod tests {
 
         let app = test::init_service(
             App::new()
-                .app_data(Data::new(AppState { storage }))
+                .app_data(Data::new(with_cache(storage)))
                 .route("/api/v1/redeem", web::post().to(redeem_handler)),
         )
         .await;

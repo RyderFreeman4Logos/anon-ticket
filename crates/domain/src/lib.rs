@@ -4,11 +4,15 @@
 //! is wired up correctly while already enforcing deterministic configuration
 //! loading and hashing helpers shared between binaries.
 
+mod cache;
+
 use std::env;
 
 use hex::encode as hex_encode;
 use sha3::{Digest, Sha3_256};
 use thiserror::Error;
+
+pub use cache::*;
 
 /// Key configuration derived from `.env`/process variables so binaries can
 /// share a deterministic environment contract.
