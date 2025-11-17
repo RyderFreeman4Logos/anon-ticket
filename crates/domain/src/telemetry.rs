@@ -38,7 +38,13 @@ impl TelemetryConfig {
         let abuse_key = format!("{}_ABUSE_THRESHOLD", upper);
 
         let log_filter = env::var(log_key).unwrap_or_else(|_| "info".to_string());
-        let metrics_address = env::var(metrics_key).ok();
+        let metrics_address = env::var(metrics_key).ok().and_then(|value| {
+            if value.trim().is_empty() {
+                None
+            } else {
+                Some(value)
+            }
+        });
         let abuse_threshold = env::var(abuse_key)
             .ok()
             .and_then(|value| value.parse::<u16>().ok())
@@ -237,6 +243,16 @@ mod tests {
         env::remove_var("API_LOG_FILTER");
         env::remove_var("API_METRICS_ADDRESS");
         env::remove_var("API_ABUSE_THRESHOLD");
+    }
+
+    #[test]
+    fn empty_metrics_address_is_treated_as_none() {
+        let _guard = ENV_GUARD.lock().unwrap();
+        env::remove_var("API_METRICS_ADDRESS");
+        env::set_var("API_METRICS_ADDRESS", "  ");
+        let cfg = TelemetryConfig::from_env("API");
+        assert_eq!(cfg.metrics_address(), None);
+        env::remove_var("API_METRICS_ADDRESS");
     }
 
     #[test]
