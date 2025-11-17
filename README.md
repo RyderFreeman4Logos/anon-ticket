@@ -92,3 +92,18 @@ Responses:
 The server uses `BootstrapConfig` to load `DATABASE_URL` / `API_BIND_ADDRESS`
 before constructing `SeaOrmStorage`, so it inherits the same environment
 variables documented earlier.
+
+## Monitor Service
+
+`anon_ticket_monitor` polls `monero-wallet-rpc`'s `get_transfers` endpoint,
+validates each PID via the domain helpers, and persists eligible payments using
+`SeaOrmStorage`. Environment variables required:
+
+- `MONERO_RPC_URL`
+- `MONERO_RPC_USER`
+- `MONERO_RPC_PASS`
+- `MONITOR_START_HEIGHT`
+
+The binary tracks the last processed height in the storage layer so it can
+resume after restarts. Configure the RPC credentials to point at the wallet you
+use for receiving PID-based transfers.
