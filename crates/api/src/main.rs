@@ -8,13 +8,15 @@ use actix_web::{
     web::{self, Data},
     App, HttpResponse, HttpServer, ResponseError,
 };
+use anon_ticket_domain::init_telemetry;
 use anon_ticket_domain::{
     derive_service_token,
     storage::{
         ClaimOutcome, NewServiceToken, PaymentStatus, PaymentStore, RevokeTokenRequest,
         ServiceToken, TokenStore,
     },
-    ApiConfig, ConfigError, InMemoryPidCache, PaymentId, PidCache, PidFormatError, StorageError,
+    AbuseSignal, AbuseTracker, ApiConfig, ConfigError, InMemoryPidCache, PaymentId, PidCache,
+    PidFormatError, StorageError, TelemetryConfig, TelemetryError, TelemetryGuard,
 };
 use anon_ticket_storage::SeaOrmStorage;
 use chrono::{DateTime, Utc};
@@ -25,6 +27,8 @@ use thiserror::Error;
 struct AppState {
     storage: SeaOrmStorage,
     cache: Arc<InMemoryPidCache>,
+    telemetry: TelemetryGuard,
+    abuse_tracker: AbuseTracker,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -95,7 +99,10 @@ async fn redeem_handler(
     state: Data<AppState>,
     payload: web::Json<RedeemRequest>,
 ) -> Result<HttpResponse, ApiError> {
-    let pid = PaymentId::parse(&payload.pid)?;
+    let pid = PaymentId::parse(&payload.pid).inspect_err(|_| {
+        metrics::counter!("api_redeem_requests_total", 1, "status" => "invalid_pid");
+        state.abuse_tracker.record(&payload.pid);
+    })?;
 
     match state.storage.claim_payment(&pid).await? {
         Some(outcome) => handle_success(&state, pid, outcome).await,
@@ -108,16 +115,19 @@ async fn token_status_handler(
     path: web::Path<String>,
 ) -> Result<HttpResponse, ApiError> {
     let token = ServiceToken::new(path.into_inner());
-    let record = state
-        .storage
-        .find_token(&token)
-        .await?
-        .ok_or(ApiError::NotFound)?;
+    let record = match state.storage.find_token(&token).await? {
+        Some(record) => record,
+        None => {
+            metrics::counter!("api_token_requests_total", 1, "endpoint" => "status", "status" => "not_found");
+            return Err(ApiError::NotFound);
+        }
+    };
     let status = if record.revoked_at.is_some() {
         "revoked"
     } else {
         "active"
     };
+    metrics::counter!("api_token_requests_total", 1, "endpoint" => "status", "status" => status);
     Ok(HttpResponse::Ok().json(TokenStatusResponse {
         status: status.to_string(),
         amount: record.amount,
@@ -133,12 +143,15 @@ async fn revoke_token_handler(
     payload: web::Json<RevokeRequest>,
 ) -> Result<HttpResponse, ApiError> {
     let token = ServiceToken::new(path.into_inner());
-    let existing = state
-        .storage
-        .find_token(&token)
-        .await?
-        .ok_or(ApiError::NotFound)?;
+    let existing = match state.storage.find_token(&token).await? {
+        Some(record) => record,
+        None => {
+            metrics::counter!("api_token_requests_total", 1, "endpoint" => "revoke", "status" => "not_found");
+            return Err(ApiError::NotFound);
+        }
+    };
     if existing.revoked_at.is_some() {
+        metrics::counter!("api_token_requests_total", 1, "endpoint" => "revoke", "status" => "already_revoked");
         return Err(ApiError::AlreadyRevoked);
     }
     let updated = state
@@ -150,6 +163,7 @@ async fn revoke_token_handler(
         })
         .await?
         .ok_or(ApiError::NotFound)?;
+    metrics::counter!("api_token_requests_total", 1, "endpoint" => "revoke", "status" => "revoked");
     Ok(HttpResponse::Ok().json(TokenStatusResponse {
         status: "revoked".to_string(),
         amount: updated.amount,
@@ -164,6 +178,7 @@ async fn handle_success(
     pid: PaymentId,
     outcome: ClaimOutcome,
 ) -> Result<HttpResponse, ApiError> {
+    metrics::counter!("api_redeem_requests_total", 1, "status" => "success");
     let service_token = derive_service_token(&pid, &outcome.txid);
     state
         .storage
@@ -176,6 +191,7 @@ async fn handle_success(
         })
         .await?;
     state.cache.mark_present(&pid);
+    state.abuse_tracker.reset(pid.as_str());
 
     Ok(HttpResponse::Ok().json(RedeemResponse {
         status: "success".to_string(),
@@ -189,17 +205,30 @@ async fn handle_absent(state: &AppState, pid: PaymentId) -> Result<HttpResponse,
     match maybe_payment {
         Some(record) if record.status == PaymentStatus::Claimed => {
             state.cache.mark_present(&pid);
+            metrics::counter!("api_redeem_requests_total", 1, "status" => "already_claimed");
             Err(ApiError::AlreadyClaimed)
         }
         Some(_) => {
             state.cache.mark_present(&pid);
+            metrics::counter!("api_redeem_requests_total", 1, "status" => "pending");
             Err(ApiError::NotFound)
         }
         None => {
             state.cache.mark_absent(&pid);
+            metrics::counter!("api_redeem_requests_total", 1, "status" => "not_found");
+            if let AbuseSignal::Escalated { attempts } = state.abuse_tracker.record(pid.as_str()) {
+                tracing::warn!(pid = pid.as_str(), attempts, "pid probing escalated");
+            }
             Err(ApiError::NotFound)
         }
     }
+}
+
+async fn metrics_handler(state: Data<AppState>) -> HttpResponse {
+    let body = state.telemetry.render_metrics();
+    HttpResponse::Ok()
+        .content_type("text/plain; version=0.0.4")
+        .body(body)
 }
 
 #[actix_web::main]
@@ -216,6 +245,8 @@ async fn main() -> io::Result<()> {
 enum BootstrapError {
     #[error("config error: {0}")]
     Config(#[from] ConfigError),
+    #[error("telemetry error: {0}")]
+    Telemetry(#[from] TelemetryError),
     #[error("storage error: {0}")]
     Storage(#[from] StorageError),
     #[error(transparent)]
@@ -224,9 +255,17 @@ enum BootstrapError {
 
 async fn run() -> Result<(), BootstrapError> {
     let config = ApiConfig::load_from_env()?;
+    let telemetry_config = TelemetryConfig::from_env("API");
+    let telemetry = init_telemetry(&telemetry_config)?;
     let storage = SeaOrmStorage::connect(config.database_url()).await?;
     let cache = Arc::new(InMemoryPidCache::default());
-    let state = AppState { storage, cache };
+    let abuse_tracker = AbuseTracker::new(telemetry.abuse_threshold());
+    let state = AppState {
+        storage,
+        cache,
+        telemetry: telemetry.clone(),
+        abuse_tracker,
+    };
 
     HttpServer::new(move || {
         App::new()
@@ -238,6 +277,7 @@ async fn run() -> Result<(), BootstrapError> {
                 "/api/v1/token/{token}/revoke",
                 web::post().to(revoke_token_handler),
             )
+            .route("/metrics", web::get().to(metrics_handler))
     })
     .bind(config.api_bind_address())?
     .run()
@@ -262,10 +302,18 @@ mod tests {
             .expect("storage inits")
     }
 
+    fn telemetry() -> TelemetryGuard {
+        let config = TelemetryConfig::from_env("API_TEST");
+        init_telemetry(&config).expect("telemetry inits")
+    }
+
     fn with_cache(storage: SeaOrmStorage) -> AppState {
+        let telemetry = telemetry();
         AppState {
             storage,
             cache: Arc::new(InMemoryPidCache::default()),
+            abuse_tracker: AbuseTracker::new(telemetry.abuse_threshold()),
+            telemetry,
         }
     }
 

@@ -5,8 +5,9 @@ mod client;
 use std::time::Duration;
 
 use anon_ticket_domain::{
+    init_telemetry,
     storage::{MonitorStateStore, NewPayment, PaymentId, PaymentStore},
-    validate_pid, BootstrapConfig, ConfigError,
+    validate_pid, BootstrapConfig, ConfigError, TelemetryConfig, TelemetryError,
 };
 use anon_ticket_storage::SeaOrmStorage;
 use chrono::{DateTime, Utc};
@@ -25,6 +26,8 @@ pub enum MonitorError {
     Storage(#[from] anon_ticket_domain::storage::StorageError),
     #[error("rpc error: {0}")]
     Rpc(String),
+    #[error("telemetry error: {0}")]
+    Telemetry(#[from] TelemetryError),
 }
 
 impl From<reqwest::Error> for MonitorError {
@@ -44,6 +47,8 @@ struct MonitorCtx {
 async fn main() -> Result<(), MonitorError> {
     dotenvy::dotenv().ok();
     let config = BootstrapConfig::load_from_env()?;
+    let telemetry_config = TelemetryConfig::from_env("MONITOR");
+    let _telemetry = init_telemetry(&telemetry_config)?;
     let storage = SeaOrmStorage::connect(config.database_url()).await?;
     let client = Client::builder().build()?;
     run(MonitorCtx {
@@ -65,12 +70,14 @@ async fn run(ctx: MonitorCtx) -> Result<(), MonitorError> {
     loop {
         match fetch_transfers(&ctx, height).await {
             Ok(transfers) => {
+                metrics::counter!("monitor_rpc_calls_total", 1, "result" => "ok");
                 let mut max_height = height;
                 let entries = transfers
                     .incoming
                     .into_iter()
                     .chain(transfers.out.into_iter())
                     .collect::<Vec<_>>();
+                metrics::histogram!("monitor_batch_entries", entries.len() as f64);
 
                 for entry in &entries {
                     if let Some(h) = entry.height {
@@ -82,9 +89,13 @@ async fn run(ctx: MonitorCtx) -> Result<(), MonitorError> {
                 if max_height > height {
                     height = max_height;
                     ctx.storage.upsert_last_processed_height(height).await?;
+                    metrics::gauge!("monitor_last_height", height as f64);
                 }
             }
-            Err(err) => warn!(?err, "rpc fetch failed"),
+            Err(err) => {
+                metrics::counter!("monitor_rpc_calls_total", 1, "result" => "error");
+                warn!(?err, "rpc fetch failed");
+            }
         }
         sleep(Duration::from_secs(5)).await;
     }
@@ -97,6 +108,7 @@ async fn process_entry(ctx: &MonitorCtx, entry: &TransferEntry) -> Result<bool, 
 
     if validate_pid(pid).is_err() {
         warn!(pid, "skipping invalid pid");
+        metrics::counter!("monitor_payments_ingested_total", 1, "result" => "invalid_pid");
         return Ok(false);
     }
 
@@ -111,6 +123,7 @@ async fn process_entry(ctx: &MonitorCtx, entry: &TransferEntry) -> Result<bool, 
             detected_at,
         })
         .await?;
+    metrics::counter!("monitor_payments_ingested_total", 1, "result" => "persisted");
 
     Ok(true)
 }

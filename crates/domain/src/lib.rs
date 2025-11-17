@@ -5,6 +5,7 @@
 //! loading and hashing helpers shared between binaries.
 
 mod cache;
+mod telemetry;
 
 use std::env;
 
@@ -13,6 +14,7 @@ use sha3::{Digest, Sha3_256};
 use thiserror::Error;
 
 pub use cache::*;
+pub use telemetry::*;
 
 /// API-specific configuration (HTTP bind + shared database) so the HTTP
 /// surface does not depend on monitor-only environment variables.
@@ -113,7 +115,7 @@ fn get_required_var(key: &'static str) -> Result<String, ConfigError> {
     env::var(key).map_err(|_| ConfigError::MissingVar { key })
 }
 
-fn hydrate_env_file() -> Result<(), ConfigError> {
+pub(crate) fn hydrate_env_file() -> Result<(), ConfigError> {
     match dotenvy::dotenv() {
         Ok(_) => {}
         Err(dotenvy::Error::Io(err)) if err.kind() == std::io::ErrorKind::NotFound => {}

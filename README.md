@@ -35,8 +35,10 @@ so that the workspace builds end-to-end. Replace these stubs incrementally as th
    These variables cover both binaries: `anon_ticket_api` only requires
    `DATABASE_URL` / `API_BIND_ADDRESS` (validated by `ApiConfig`), while
    `anon_ticket_monitor` enforces the full Monero RPC contract through
-   `BootstrapConfig`. Missing or malformed values cause the respective process
-   to refuse startup.
+   `BootstrapConfig`. Optional telemetry knobs (`API_LOG_FILTER`,
+   `API_METRICS_ADDRESS`, `API_ABUSE_THRESHOLD`, `MONITOR_LOG_FILTER`,
+   `MONITOR_METRICS_ADDRESS`) fine-tune tracing verbosity and open Prometheus
+   listeners without preventing startup if unset.
 2. Store deployment-specific TOML/JSON secrets inside `config/` (see
    `config/README.md`). The folder is git-ignored to avoid committing secrets;
    document schemas or defaults instead of real credentials.
@@ -93,7 +95,9 @@ Responses:
 
 The server uses `ApiConfig` to load `DATABASE_URL` / `API_BIND_ADDRESS` before
 constructing `SeaOrmStorage`, so it stays decoupled from monitor-only
-environment requirements.
+environment requirements. Optional observability env vars allow tuning the log
+filter, metrics listener (`/metrics` HTTP route), and abuse-threshold used by
+the in-memory tracker that logs suspicious PID probes.
 
 ### Token Introspection & Revocation
 
@@ -110,6 +114,15 @@ obvious 404 responses without hitting the database, while positive entries are
 recorded after successful claims. The abstraction lives in `anon_ticket_domain`
 so it can later be backed by Redis or a real Bloom filter.
 
+### Metrics & Abuse Detection
+
+`anon_ticket_api` exposes Prometheus-compatible metrics at `GET /metrics`,
+backed by the shared telemetry module. Set `API_METRICS_ADDRESS` if you prefer
+the exporter to run on a dedicated port. The API increments counters for each
+redeem/token request outcome and logs whenever repeated PID probes exceed the
+configurable `API_ABUSE_THRESHOLD` (default: 5). These signals can be wired into
+dashboards or alerting rules to flag bot abuse early.
+
 ## Monitor Service
 
 `anon_ticket_monitor` polls `monero-wallet-rpc`'s `get_transfers` endpoint,
@@ -121,6 +134,27 @@ validates each PID via the domain helpers, and persists eligible payments using
 - `MONERO_RPC_PASS`
 - `MONITOR_START_HEIGHT`
 
+Optional telemetry settings mirror the API (`MONITOR_LOG_FILTER`,
+`MONITOR_METRICS_ADDRESS`). When `MONITOR_METRICS_ADDRESS` is provided, the
+monitor automatically exposes Prometheus metrics (RPC successes/failures, batch
+sizes, ingested payments) so ops can visualize sync progress.
+
 The binary tracks the last processed height in the storage layer so it can
 resume after restarts. Configure the RPC credentials to point at the wallet you
 use for receiving PID-based transfers.
+
+## Observability
+
+Both binaries share the domain-level telemetry module:
+
+- `TelemetryConfig::from_env(<prefix>)` picks up log filters, optional metrics
+  listeners, and abuse escalation thresholds without forcing additional env
+  vars.
+- `init_telemetry` installs a global `tracing-subscriber` configured via the
+  supplied filter (default `info`).
+- Prometheus metrics are collected via `metrics-exporter-prometheus`; if a
+  `<PREFIX>_METRICS_ADDRESS` (e.g. `API_METRICS_ADDRESS=0.0.0.0:9898`) exists, a
+  listener is spawned automatically, otherwise the API's `/metrics` endpoint can
+  be scraped directly.
+- `AbuseTracker` logs and counts repeated invalid PID probes, making it easy to
+  wire alert thresholds to Slack/PagerDuty.
