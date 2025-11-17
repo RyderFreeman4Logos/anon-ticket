@@ -349,7 +349,10 @@ mod tests {
     #[test]
     fn pid_validation_rejects_invalid_inputs() {
         assert_eq!(validate_pid("deadbeef"), Err(PidFormatError::WrongLength));
-        assert_eq!(validate_pid("zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"), Err(PidFormatError::NonHex));
+        assert_eq!(
+            validate_pid("zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"),
+            Err(PidFormatError::NonHex)
+        );
         assert!(validate_pid("0123456789abcdef0123456789abcdef").is_ok());
     }
 
