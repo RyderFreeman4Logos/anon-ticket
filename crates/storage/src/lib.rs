@@ -17,8 +17,8 @@ use entity::payments::{self, PaymentStatusDb};
 use entity::service_tokens;
 use sea_orm::sea_query::{ColumnDef, Expr, OnConflict, Table, TableCreateStatement};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, Database, DatabaseBackend, DatabaseConnection,
-    EntityTrait, QueryFilter, Set, TransactionTrait,
+    ActiveEnum, ActiveModelTrait, ColumnTrait, ConnectionTrait, Database, DatabaseBackend,
+    DatabaseConnection, EntityTrait, QueryFilter, Set, TransactionTrait,
 };
 
 /// Shared storage handle used by the HTTP API and monitor services.
@@ -196,29 +196,31 @@ impl PaymentStore for SeaOrmStorage {
             .begin()
             .await
             .map_err(StorageError::from_source)?;
-        let maybe_payment = payments::Entity::find()
+        let now = Utc::now();
+        let update_result = payments::Entity::update_many()
+            .col_expr(
+                payments::Column::Status,
+                Expr::value(PaymentStatusDb::Claimed.to_value()),
+            )
+            .col_expr(payments::Column::ClaimedAt, Expr::value(now))
             .filter(payments::Column::Pid.eq(pid.as_str()))
-            .one(&txn)
+            .filter(payments::Column::Status.eq(PaymentStatusDb::Unclaimed))
+            .exec(&txn)
             .await
             .map_err(StorageError::from_source)?;
 
-        let Some(payment) = maybe_payment else {
-            txn.commit().await.map_err(StorageError::from_source)?;
-            return Ok(None);
-        };
-
-        if payment.status == PaymentStatusDb::Claimed {
+        if update_result.rows_affected == 0 {
             txn.commit().await.map_err(StorageError::from_source)?;
             return Ok(None);
         }
 
-        let mut active: payments::ActiveModel = payment.clone().into();
-        active.status = Set(PaymentStatusDb::Claimed);
-        active.claimed_at = Set(Some(Utc::now()));
-        let updated = active
-            .update(&txn)
+        let updated = payments::Entity::find()
+            .filter(payments::Column::Pid.eq(pid.as_str()))
+            .one(&txn)
             .await
-            .map_err(StorageError::from_source)?;
+            .map_err(StorageError::from_source)?
+            .ok_or_else(|| StorageError::Database("claimed payment missing".to_string()))?;
+
         txn.commit().await.map_err(StorageError::from_source)?;
 
         Ok(Some(ClaimOutcome {
@@ -397,6 +399,33 @@ mod tests {
 
         let second = store.claim_payment(&test_pid()).await.unwrap();
         assert!(second.is_none());
+    }
+
+    #[tokio::test]
+    async fn concurrent_claims_only_succeed_once() {
+        let store = storage().await;
+        store
+            .insert_payment(NewPayment {
+                pid: test_pid(),
+                txid: "tx1".into(),
+                amount: 42,
+                block_height: 100,
+                detected_at: Utc::now(),
+            })
+            .await
+            .unwrap();
+
+        let store_a = store.clone();
+        let store_b = store.clone();
+        let pid = test_pid();
+        let (first, second) =
+            tokio::join!(store_a.claim_payment(&pid), store_b.claim_payment(&pid));
+
+        let successes = [first.unwrap(), second.unwrap()]
+            .into_iter()
+            .filter(|outcome| outcome.is_some())
+            .count();
+        assert_eq!(successes, 1, "only one claimer should succeed");
     }
 
     #[tokio::test]
