@@ -72,14 +72,9 @@ async fn run(ctx: MonitorCtx) -> Result<(), MonitorError> {
                 metrics::counter!("monitor_rpc_calls_total", 1, "result" => "ok");
                 let mut max_height = height;
                 let mut advanced = false;
-                let entries = transfers
-                    .incoming
-                    .into_iter()
-                    .chain(transfers.out.into_iter())
-                    .collect::<Vec<_>>();
-                metrics::histogram!("monitor_batch_entries", entries.len() as f64);
+                metrics::histogram!("monitor_batch_entries", transfers.incoming.len() as f64);
 
-                for entry in &entries {
+                for entry in &transfers.incoming {
                     if let Some(h) = entry.height {
                         max_height = max_height.max(h as u64);
                     }
@@ -146,7 +141,7 @@ async fn fetch_transfers(
 
     let params = Params {
         in_transfers: true,
-        out: true,
+        out: false,
         pending: false,
         filter_by_height: true,
         min_height: start_height,

@@ -17,8 +17,6 @@ pub struct JsonRpcResponse<T> {
 pub struct TransfersResponse {
     #[serde(default, rename = "in")]
     pub incoming: Vec<TransferEntry>,
-    #[serde(default)]
-    pub out: Vec<TransferEntry>,
 }
 
 #[derive(Debug, Deserialize)]
