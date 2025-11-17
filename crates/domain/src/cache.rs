@@ -1,4 +1,9 @@
-use std::{collections::HashSet, sync::RwLock};
+use std::{
+    collections::HashMap,
+    collections::HashSet,
+    sync::RwLock,
+    time::{Duration, Instant},
+};
 
 use crate::PaymentId;
 
@@ -21,16 +26,18 @@ pub trait PidCache: Send + Sync {
     fn mark_absent(&self, pid: &PaymentId);
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct InMemoryPidCache {
     positives: RwLock<HashSet<String>>,
-    negatives: RwLock<HashSet<String>>,
+    negatives: RwLock<HashMap<String, Instant>>,
+    ttl: Duration,
 }
 
 impl PidCache for InMemoryPidCache {
     fn might_contain(&self, pid: &PaymentId) -> bool {
+        self.prune_expired();
         let negatives = self.negatives.read().unwrap();
-        !negatives.contains(pid.as_str())
+        !negatives.contains_key(pid.as_str())
     }
 
     fn mark_present(&self, pid: &PaymentId) {
@@ -43,13 +50,35 @@ impl PidCache for InMemoryPidCache {
 
     fn mark_absent(&self, pid: &PaymentId) {
         let mut negatives = self.negatives.write().unwrap();
-        negatives.insert(pid.as_str().to_string());
+        negatives.insert(pid.as_str().to_string(), Instant::now());
     }
 }
 
 impl InMemoryPidCache {
+    const DEFAULT_TTL: Duration = Duration::from_secs(60);
+
+    pub fn new(ttl: Duration) -> Self {
+        Self {
+            positives: RwLock::new(HashSet::new()),
+            negatives: RwLock::new(HashMap::new()),
+            ttl,
+        }
+    }
+
+    fn prune_expired(&self) {
+        let mut negatives = self.negatives.write().unwrap();
+        let now = Instant::now();
+        negatives.retain(|_, inserted| now.duration_since(*inserted) <= self.ttl);
+    }
+
     pub fn known_present(&self, pid: &PaymentId) -> bool {
         self.positives.read().unwrap().contains(pid.as_str())
+    }
+}
+
+impl Default for InMemoryPidCache {
+    fn default() -> Self {
+        Self::new(Self::DEFAULT_TTL)
     }
 }
 
@@ -68,5 +97,15 @@ mod tests {
         cache.mark_present(&pid);
         assert!(cache.might_contain(&pid));
         assert!(cache.known_present(&pid));
+    }
+
+    #[test]
+    fn negatives_expire() {
+        let cache = InMemoryPidCache::new(Duration::from_millis(10));
+        let pid = PaymentId::new("fedcba9876543210fedcba9876543210");
+        cache.mark_absent(&pid);
+        assert!(!cache.might_contain(&pid));
+        std::thread::sleep(Duration::from_millis(15));
+        assert!(cache.might_contain(&pid));
     }
 }

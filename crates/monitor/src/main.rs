@@ -11,7 +11,7 @@ use anon_ticket_domain::{
 };
 use anon_ticket_storage::SeaOrmStorage;
 use chrono::{DateTime, Utc};
-use client::{JsonRpcRequest, JsonRpcResponse, TransferEntry, TransfersResponse};
+use client::{HeightResponse, JsonRpcRequest, JsonRpcResponse, TransferEntry, TransfersResponse};
 use reqwest::{Client, StatusCode};
 use serde::Serialize;
 use thiserror::Error;
@@ -70,21 +70,28 @@ async fn run(ctx: MonitorCtx) -> Result<(), MonitorError> {
         match fetch_transfers(&ctx, height).await {
             Ok(transfers) => {
                 metrics::counter!("monitor_rpc_calls_total", 1, "result" => "ok");
-                let mut max_height = height;
+                let mut observed_height: Option<u64> = None;
                 metrics::histogram!("monitor_batch_entries", transfers.incoming.len() as f64);
 
                 for entry in &transfers.incoming {
                     if let Some(h) = entry.height {
-                        max_height = max_height.max(h as u64);
+                        let h = h as u64;
+                        observed_height = Some(observed_height.map_or(h, |current| current.max(h)));
                     }
                     process_entry(&ctx, entry).await?;
                 }
 
-                if max_height >= height {
-                    height = max_height + 1;
+                let mut next_height = height;
+                if let Some(max_height) = observed_height {
+                    next_height = max_height + 1;
+                } else if let Ok(chain_height) = fetch_wallet_height(&ctx).await {
+                    next_height = chain_height.max(next_height);
                 }
-                ctx.storage.upsert_last_processed_height(height).await?;
-                metrics::gauge!("monitor_last_height", height as f64);
+                ctx.storage
+                    .upsert_last_processed_height(next_height)
+                    .await?;
+                metrics::gauge!("monitor_last_height", next_height as f64);
+                height = next_height;
             }
             Err(err) => {
                 metrics::counter!("monitor_rpc_calls_total", 1, "result" => "error");
@@ -164,4 +171,30 @@ async fn fetch_transfers(
 
     let parsed: JsonRpcResponse<TransfersResponse> = resp.json().await?;
     Ok(parsed.result)
+}
+
+async fn fetch_wallet_height(ctx: &MonitorCtx) -> Result<u64, MonitorError> {
+    #[derive(Serialize)]
+    struct Params;
+
+    let request = JsonRpcRequest {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "get_height".into(),
+        params: Params,
+    };
+
+    let mut builder = ctx.client.post(ctx.config.monero_rpc_url());
+    builder = builder.basic_auth(
+        ctx.config.monero_rpc_user(),
+        Some(ctx.config.monero_rpc_pass()),
+    );
+
+    let resp = builder.json(&request).send().await?;
+    if resp.status() != StatusCode::OK {
+        return Err(MonitorError::Rpc(format!("rpc failure {}", resp.status())));
+    }
+
+    let parsed: JsonRpcResponse<HeightResponse> = resp.json().await?;
+    Ok(parsed.result.height)
 }

@@ -28,3 +28,8 @@ pub struct TransferEntry {
     #[serde(default)]
     pub payment_id: Option<String>,
 }
+
+#[derive(Debug, Deserialize)]
+pub struct HeightResponse {
+    pub height: u64,
+}
