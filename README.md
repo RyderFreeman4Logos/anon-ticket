@@ -4,7 +4,7 @@ Anon-Ticket is organized as a Cargo workspace so that the HTTP API, monitor
 service, and domain primitives can evolve independently while sharing the same
 lint/test configuration.
 
-The repository is pinned to Rust 1.76 via `rust-toolchain.toml`, so installing
+The repository is pinned to Rust 1.91.1 via `rust-toolchain.toml`, so installing
 that toolchain plus `clippy`/`rustfmt` is sufficient to reproduce CI locally.
 
 ## Workspace Layout
