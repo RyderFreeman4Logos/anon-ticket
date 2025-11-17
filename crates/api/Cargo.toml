@@ -1,0 +1,11 @@
+[package]
+name = "anon_ticket_api"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+version.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+anon_ticket_domain = { path = "../domain" }

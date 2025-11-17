@@ -1,0 +1,2 @@
+warn-on-all-wildcard-imports = true
+allow-print-in-tests = true
