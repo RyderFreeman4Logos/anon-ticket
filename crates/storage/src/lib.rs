@@ -164,16 +164,6 @@ async fn create_table(
 #[async_trait::async_trait]
 impl PaymentStore for SeaOrmStorage {
     async fn insert_payment(&self, payment: NewPayment) -> StorageResult<()> {
-        if payments::Entity::find()
-            .filter(payments::Column::Pid.eq(payment.pid.as_str()))
-            .one(self.connection())
-            .await
-            .map_err(StorageError::from_source)?
-            .is_some()
-        {
-            return Ok(());
-        }
-
         let model = payments::ActiveModel {
             pid: Set(payment.pid.into_inner()),
             txid: Set(payment.txid),
@@ -183,8 +173,13 @@ impl PaymentStore for SeaOrmStorage {
             created_at: Set(payment.detected_at),
             ..Default::default()
         };
-        model
-            .insert(self.connection())
+        payments::Entity::insert(model)
+            .on_conflict(
+                OnConflict::column(payments::Column::Pid)
+                    .do_nothing()
+                    .to_owned(),
+            )
+            .exec_without_returning(self.connection())
             .await
             .map_err(StorageError::from_source)?;
         Ok(())
@@ -435,6 +430,22 @@ mod tests {
 
         let second = store.claim_payment(&test_pid()).await.unwrap();
         assert!(second.is_none());
+    }
+
+    #[tokio::test]
+    async fn inserting_same_pid_twice_is_ok() {
+        let Some(store) = storage_or_skip("inserting_same_pid_twice_is_ok").await else {
+            return;
+        };
+        let payment = NewPayment {
+            pid: test_pid(),
+            txid: "tx1".into(),
+            amount: 42,
+            block_height: 100,
+            detected_at: Utc::now(),
+        };
+        store.insert_payment(payment.clone()).await.unwrap();
+        store.insert_payment(payment).await.unwrap();
     }
 
     #[tokio::test]
