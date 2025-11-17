@@ -371,15 +371,51 @@ mod tests {
         ServiceToken::new("deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
     }
 
-    async fn storage() -> SeaOrmStorage {
-        SeaOrmStorage::connect("sqlite::memory:")
-            .await
-            .expect("storage inits")
+    #[cfg(feature = "sqlite")]
+    fn test_backend_url() -> Option<String> {
+        Some("sqlite::memory:".to_string())
+    }
+
+    #[cfg(all(feature = "postgres", not(feature = "sqlite")))]
+    fn test_backend_url() -> Option<String> {
+        std::env::var("TEST_POSTGRES_URL").ok()
+    }
+
+    #[cfg(not(any(feature = "sqlite", feature = "postgres")))]
+    fn test_backend_url() -> Option<String> {
+        None
+    }
+
+    async fn storage() -> Option<SeaOrmStorage> {
+        let url = match test_backend_url() {
+            Some(url) => url,
+            None => return None,
+        };
+
+        Some(
+            SeaOrmStorage::connect(&url)
+                .await
+                .unwrap_or_else(|err| panic!("failed to bootstrap test database `{url}`: {err}")),
+        )
+    }
+
+    async fn storage_or_skip(test_name: &str) -> Option<SeaOrmStorage> {
+        match storage().await {
+            Some(store) => Some(store),
+            None => {
+                eprintln!(
+                    "skipping {test_name}: no backend URL configured. For postgres tests set TEST_POSTGRES_URL."
+                );
+                None
+            }
+        }
     }
 
     #[tokio::test]
     async fn payment_lifecycle() {
-        let store = storage().await;
+        let Some(store) = storage_or_skip("payment_lifecycle").await else {
+            return;
+        };
         store
             .insert_payment(NewPayment {
                 pid: test_pid(),
@@ -403,7 +439,9 @@ mod tests {
 
     #[tokio::test]
     async fn concurrent_claims_only_succeed_once() {
-        let store = storage().await;
+        let Some(store) = storage_or_skip("concurrent_claims_only_succeed_once").await else {
+            return;
+        };
         store
             .insert_payment(NewPayment {
                 pid: test_pid(),
@@ -430,7 +468,9 @@ mod tests {
 
     #[tokio::test]
     async fn token_lifecycle() {
-        let store = storage().await;
+        let Some(store) = storage_or_skip("token_lifecycle").await else {
+            return;
+        };
         store
             .insert_payment(NewPayment {
                 pid: test_pid(),
@@ -469,7 +509,9 @@ mod tests {
 
     #[tokio::test]
     async fn monitor_state_roundtrip() {
-        let store = storage().await;
+        let Some(store) = storage_or_skip("monitor_state_roundtrip").await else {
+            return;
+        };
         assert!(store.last_processed_height().await.unwrap().is_none());
         store.upsert_last_processed_height(1337).await.unwrap();
         assert_eq!(store.last_processed_height().await.unwrap(), Some(1337));

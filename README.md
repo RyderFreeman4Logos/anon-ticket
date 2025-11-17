@@ -51,6 +51,9 @@ dependency-free, while enabling PostgreSQL is as simple as rebuilding with:
 ```bash
 cargo test -p anon_ticket_storage --no-default-features --features postgres
 ```
+Set `TEST_POSTGRES_URL=postgres://user:pass@host/dbname` to point at a throwaway
+database before running the Postgres command; tests will be skipped if the env
+var is absent.
 
 Both backends share the same schema: `payments` (PID primary key),
 `service_tokens` (token primary key), and `monitor_state` (key/value for height
