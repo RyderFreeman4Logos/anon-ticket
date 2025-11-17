@@ -14,6 +14,34 @@ use thiserror::Error;
 
 pub use cache::*;
 
+/// API-specific configuration (HTTP bind + shared database) so the HTTP
+/// surface does not depend on monitor-only environment variables.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ApiConfig {
+    database_url: String,
+    api_bind_address: String,
+}
+
+impl ApiConfig {
+    /// Loads only the environment variables required by the API binary.
+    pub fn load_from_env() -> Result<Self, ConfigError> {
+        hydrate_env_file()?;
+
+        Ok(Self {
+            database_url: get_required_var("DATABASE_URL")?,
+            api_bind_address: get_required_var("API_BIND_ADDRESS")?,
+        })
+    }
+
+    pub fn database_url(&self) -> &str {
+        &self.database_url
+    }
+
+    pub fn api_bind_address(&self) -> &str {
+        &self.api_bind_address
+    }
+}
+
 /// Key configuration derived from `.env`/process variables so binaries can
 /// share a deterministic environment contract.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -31,11 +59,7 @@ impl BootstrapConfig {
     /// required process variables. Missing or malformed entries surface as
     /// `ConfigError` so binaries can respond gracefully.
     pub fn load_from_env() -> Result<Self, ConfigError> {
-        match dotenvy::dotenv() {
-            Ok(_) => {}
-            Err(dotenvy::Error::Io(err)) if err.kind() == std::io::ErrorKind::NotFound => {}
-            Err(err) => return Err(ConfigError::Dotenv { source: err }),
-        }
+        hydrate_env_file()?;
 
         let database_url = get_required_var("DATABASE_URL")?;
         let api_bind_address = get_required_var("API_BIND_ADDRESS")?;
@@ -87,6 +111,16 @@ impl BootstrapConfig {
 
 fn get_required_var(key: &'static str) -> Result<String, ConfigError> {
     env::var(key).map_err(|_| ConfigError::MissingVar { key })
+}
+
+fn hydrate_env_file() -> Result<(), ConfigError> {
+    match dotenvy::dotenv() {
+        Ok(_) => {}
+        Err(dotenvy::Error::Io(err)) if err.kind() == std::io::ErrorKind::NotFound => {}
+        Err(err) => return Err(ConfigError::Dotenv { source: err }),
+    }
+
+    Ok(())
 }
 
 /// Errors emitted when `.env` hydration or environment parsing fails.
@@ -315,7 +349,9 @@ pub fn derive_service_token(pid: &PaymentId, txid: &str) -> ServiceToken {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::env;
+    use std::{env, sync::Mutex};
+
+    static ENV_GUARD: Mutex<()> = Mutex::new(());
 
     fn set_env() {
         env::set_var("DATABASE_URL", "sqlite://test.db");
@@ -336,10 +372,29 @@ mod tests {
 
     #[test]
     fn config_loader_reads_env() {
+        let _guard = ENV_GUARD.lock().unwrap();
         set_env();
         let config = BootstrapConfig::load_from_env().expect("config loads");
         assert_eq!(config.database_url(), "sqlite://test.db");
         assert_eq!(config.monitor_start_height(), 42);
+    }
+
+    #[test]
+    fn api_config_only_requires_api_env() {
+        let _guard = ENV_GUARD.lock().unwrap();
+        env::remove_var("MONERO_RPC_URL");
+        env::remove_var("MONERO_RPC_USER");
+        env::remove_var("MONERO_RPC_PASS");
+        env::remove_var("MONITOR_START_HEIGHT");
+        env::set_var("DATABASE_URL", "sqlite://api-only.db");
+        env::set_var("API_BIND_ADDRESS", "127.0.0.1:9999");
+
+        let config = ApiConfig::load_from_env().expect("api config loads");
+        assert_eq!(config.database_url(), "sqlite://api-only.db");
+        assert_eq!(config.api_bind_address(), "127.0.0.1:9999");
+
+        // Restore defaults for subsequent tests in this module.
+        set_env();
     }
 
     #[test]

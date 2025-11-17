@@ -32,9 +32,11 @@ so that the workspace builds end-to-end. Replace these stubs incrementally as th
 ## Environment Setup
 
 1. Copy `.env.example` to `.env` and update the values per deployment target.
-   These variables mirror the requirements enforced by `BootstrapConfig` in the
-   domain crate, so binaries will refuse to start if any field is missing or
-   malformed.
+   These variables cover both binaries: `anon_ticket_api` only requires
+   `DATABASE_URL` / `API_BIND_ADDRESS` (validated by `ApiConfig`), while
+   `anon_ticket_monitor` enforces the full Monero RPC contract through
+   `BootstrapConfig`. Missing or malformed values cause the respective process
+   to refuse startup.
 2. Store deployment-specific TOML/JSON secrets inside `config/` (see
    `config/README.md`). The folder is git-ignored to avoid committing secrets;
    document schemas or defaults instead of real credentials.
@@ -89,9 +91,9 @@ Responses:
 - `404 Not Found` if the PID has never been observed.
 - `409 Conflict` if the PID was already claimed.
 
-The server uses `BootstrapConfig` to load `DATABASE_URL` / `API_BIND_ADDRESS`
-before constructing `SeaOrmStorage`, so it inherits the same environment
-variables documented earlier.
+The server uses `ApiConfig` to load `DATABASE_URL` / `API_BIND_ADDRESS` before
+constructing `SeaOrmStorage`, so it stays decoupled from monitor-only
+environment requirements.
 
 ### Token Introspection & Revocation
 

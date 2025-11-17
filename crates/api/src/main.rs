@@ -14,8 +14,7 @@ use anon_ticket_domain::{
         ClaimOutcome, NewServiceToken, PaymentStatus, PaymentStore, RevokeTokenRequest,
         ServiceToken, TokenStore,
     },
-    BootstrapConfig, ConfigError, InMemoryPidCache, PaymentId, PidCache, PidFormatError,
-    StorageError,
+    ApiConfig, ConfigError, InMemoryPidCache, PaymentId, PidCache, PidFormatError, StorageError,
 };
 use anon_ticket_storage::SeaOrmStorage;
 use chrono::{DateTime, Utc};
@@ -224,7 +223,7 @@ enum BootstrapError {
 }
 
 async fn run() -> Result<(), BootstrapError> {
-    let config = BootstrapConfig::load_from_env()?;
+    let config = ApiConfig::load_from_env()?;
     let storage = SeaOrmStorage::connect(config.database_url()).await?;
     let cache = Arc::new(InMemoryPidCache::default());
     let state = AppState { storage, cache };
