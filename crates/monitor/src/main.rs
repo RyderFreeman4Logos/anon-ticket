@@ -65,17 +65,24 @@ async fn run(ctx: MonitorCtx) -> Result<(), MonitorError> {
     loop {
         match fetch_transfers(&ctx, height).await {
             Ok(transfers) => {
-                for entry in transfers
+                let mut max_height = height;
+                let entries = transfers
                     .incoming
                     .into_iter()
                     .chain(transfers.out.into_iter())
-                {
-                    if process_entry(&ctx, &entry).await? {
+                    .collect::<Vec<_>>();
+
+                for entry in &entries {
+                    if process_entry(&ctx, entry).await? {
                         if let Some(h) = entry.height {
-                            height = h as u64;
-                            ctx.storage.upsert_last_processed_height(height).await?;
+                            max_height = max_height.max(h as u64);
                         }
                     }
+                }
+
+                if max_height > height {
+                    height = max_height;
+                    ctx.storage.upsert_last_processed_height(height).await?;
                 }
             }
             Err(err) => warn!(?err, "rpc fetch failed"),
