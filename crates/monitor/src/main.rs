@@ -65,7 +65,11 @@ async fn run(ctx: MonitorCtx) -> Result<(), MonitorError> {
     loop {
         match fetch_transfers(&ctx, height).await {
             Ok(transfers) => {
-                for entry in transfers.out {
+                for entry in transfers
+                    .incoming
+                    .into_iter()
+                    .chain(transfers.out.into_iter())
+                {
                     if process_entry(&ctx, &entry).await? {
                         if let Some(h) = entry.height {
                             height = h as u64;
@@ -111,7 +115,8 @@ async fn fetch_transfers(
 ) -> Result<TransfersResponse, MonitorError> {
     #[derive(Serialize)]
     struct Params {
-        in_: bool,
+        #[serde(rename = "in")]
+        in_transfers: bool,
         out: bool,
         pending: bool,
         filter_by_height: bool,
@@ -119,7 +124,7 @@ async fn fetch_transfers(
     }
 
     let params = Params {
-        in_: false,
+        in_transfers: true,
         out: true,
         pending: false,
         filter_by_height: true,
