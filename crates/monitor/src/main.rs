@@ -60,7 +60,6 @@ async fn main() -> Result<(), MonitorError> {
 }
 
 async fn run(ctx: MonitorCtx) -> Result<(), MonitorError> {
-    tracing_subscriber::fmt::init();
     let mut height = ctx
         .storage
         .last_processed_height()
