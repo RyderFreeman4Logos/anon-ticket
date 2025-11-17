@@ -1,0 +1,22 @@
+[package]
+name = "anon_ticket_storage"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+version.workspace = true
+authors.workspace = true
+publish = false
+
+[features]
+default = ["sqlite"]
+sqlite = ["sea-orm/sqlx-sqlite"]
+postgres = ["sea-orm/sqlx-postgres"]
+
+[dependencies]
+anon_ticket_domain = { path = "../domain" }
+sea-orm.workspace = true
+chrono.workspace = true
+async-trait.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true

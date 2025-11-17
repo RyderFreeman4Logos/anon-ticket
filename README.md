@@ -40,3 +40,20 @@ so that the workspace builds end-to-end. Replace these stubs incrementally as th
    document schemas or defaults instead of real credentials.
 3. Run the shared commands listed above (`cargo fmt`, `cargo clippy`,
    `cargo test`) to validate changes.
+
+## Storage Layer
+
+The `anon_ticket_storage` crate implements the `PaymentStore`, `TokenStore`, and
+`MonitorStateStore` traits from `anon_ticket_domain::storage` using SeaORM. It
+defaults to SQLite (`features = ["sqlite"]`) so local development remains
+dependency-free, while enabling PostgreSQL is as simple as rebuilding with:
+
+```bash
+cargo test -p anon_ticket_storage --no-default-features --features postgres
+```
+
+Both backends share the same schema: `payments` (PID primary key),
+`service_tokens` (token primary key), and `monitor_state` (key/value for height
+tracking). The storage adapter automatically runs migrations when connecting, so
+crates can call `SeaOrmStorage::connect(<DATABASE_URL>)` and immediately receive
+a handle that satisfies the domain traits.

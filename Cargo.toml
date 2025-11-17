@@ -3,12 +3,13 @@ members = [
     "crates/api",
     "crates/domain",
     "crates/monitor",
+    "crates/storage",
 ]
 resolver = "2"
 
 [workspace.package]
 edition = "2021"
-rust-version = "1.76"
+rust-version = "1.91"
 license = "MIT OR Apache-2.0"
 version = "0.1.0"
 authors = ["Anon-Ticket Contributors"]
@@ -18,3 +19,7 @@ dotenvy = "0.15"
 sha3 = "0.10"
 hex = "0.4"
 thiserror = "1"
+async-trait = "0.1"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+sea-orm = { version = "0.12", default-features = false, features = ["macros", "runtime-tokio-rustls", "with-chrono"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

@@ -118,6 +118,157 @@ pub fn derive_pid_fingerprint(pid: &str) -> String {
     hex_encode(digest)
 }
 
+pub mod storage {
+    use async_trait::async_trait;
+    use chrono::{DateTime, Utc};
+    use thiserror::Error;
+
+    /// Common result alias for storage operations.
+    pub type StorageResult<T> = Result<T, StorageError>;
+
+    #[derive(Debug, Error, Clone, PartialEq, Eq)]
+    pub enum StorageError {
+        #[error("database error: {0}")]
+        Database(String),
+    }
+
+    impl StorageError {
+        pub fn from_source(err: impl std::fmt::Display) -> Self {
+            Self::Database(err.to_string())
+        }
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+    pub struct PaymentId(String);
+
+    impl PaymentId {
+        pub fn new(value: impl Into<String>) -> Self {
+            Self(value.into())
+        }
+
+        pub fn as_str(&self) -> &str {
+            &self.0
+        }
+
+        pub fn into_inner(self) -> String {
+            self.0
+        }
+    }
+
+    impl From<&str> for PaymentId {
+        fn from(value: &str) -> Self {
+            Self::new(value.to_owned())
+        }
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+    pub struct ServiceToken(String);
+
+    impl ServiceToken {
+        pub fn new(value: impl Into<String>) -> Self {
+            Self(value.into())
+        }
+
+        pub fn as_str(&self) -> &str {
+            &self.0
+        }
+
+        pub fn into_inner(self) -> String {
+            self.0
+        }
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum PaymentStatus {
+        Unclaimed,
+        Claimed,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub struct PaymentRecord {
+        pub pid: PaymentId,
+        pub txid: String,
+        pub amount: i64,
+        pub block_height: i64,
+        pub status: PaymentStatus,
+        pub created_at: DateTime<Utc>,
+        pub claimed_at: Option<DateTime<Utc>>,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub struct NewPayment {
+        pub pid: PaymentId,
+        pub txid: String,
+        pub amount: i64,
+        pub block_height: i64,
+        pub detected_at: DateTime<Utc>,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub struct ClaimOutcome {
+        pub pid: PaymentId,
+        pub txid: String,
+        pub amount: i64,
+        pub block_height: i64,
+        pub claimed_at: DateTime<Utc>,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub struct NewServiceToken {
+        pub token: ServiceToken,
+        pub pid: PaymentId,
+        pub amount: i64,
+        pub issued_at: DateTime<Utc>,
+        pub abuse_score: i16,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub struct ServiceTokenRecord {
+        pub token: ServiceToken,
+        pub pid: PaymentId,
+        pub amount: i64,
+        pub issued_at: DateTime<Utc>,
+        pub revoked_at: Option<DateTime<Utc>>,
+        pub revoke_reason: Option<String>,
+        pub abuse_score: i16,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub struct RevokeTokenRequest {
+        pub token: ServiceToken,
+        pub reason: Option<String>,
+        pub abuse_score: Option<i16>,
+    }
+
+    #[async_trait]
+    pub trait PaymentStore: Send + Sync {
+        async fn insert_payment(&self, payment: NewPayment) -> StorageResult<()>;
+        async fn claim_payment(&self, pid: &PaymentId) -> StorageResult<Option<ClaimOutcome>>;
+        async fn find_payment(&self, pid: &PaymentId) -> StorageResult<Option<PaymentRecord>>;
+    }
+
+    #[async_trait]
+    pub trait TokenStore: Send + Sync {
+        async fn insert_token(&self, token: NewServiceToken) -> StorageResult<ServiceTokenRecord>;
+        async fn find_token(
+            &self,
+            token: &ServiceToken,
+        ) -> StorageResult<Option<ServiceTokenRecord>>;
+        async fn revoke_token(
+            &self,
+            request: RevokeTokenRequest,
+        ) -> StorageResult<Option<ServiceTokenRecord>>;
+    }
+
+    #[async_trait]
+    pub trait MonitorStateStore: Send + Sync {
+        async fn last_processed_height(&self) -> StorageResult<Option<u64>>;
+        async fn upsert_last_processed_height(&self, height: u64) -> StorageResult<()>;
+    }
+}
+
+pub use storage::*;
+
 #[cfg(test)]
 mod tests {
     use super::*;
