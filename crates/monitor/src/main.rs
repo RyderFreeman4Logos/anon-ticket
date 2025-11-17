@@ -73,11 +73,10 @@ async fn run(ctx: MonitorCtx) -> Result<(), MonitorError> {
                     .collect::<Vec<_>>();
 
                 for entry in &entries {
-                    if process_entry(&ctx, entry).await? {
-                        if let Some(h) = entry.height {
-                            max_height = max_height.max(h as u64);
-                        }
+                    if let Some(h) = entry.height {
+                        max_height = max_height.max(h as u64);
                     }
+                    process_entry(&ctx, entry).await?;
                 }
 
                 if max_height > height {
