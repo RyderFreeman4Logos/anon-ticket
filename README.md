@@ -89,9 +89,11 @@ Responses:
 - `200 OK` with `{ "status": "success", "service_token": "…", "balance": 123 }` when the
   payment exists and is unclaimed (a token record is inserted via the shared
   storage layer).
+- `200 OK` with `{ "status": "already_claimed", ... }` when the payment was
+  previously claimed; the API re-derives the deterministic token and returns it so
+  clients can safely retry after transient failures.
 - `400 Bad Request` if the PID is not a 32-char hex string.
 - `404 Not Found` if the PID has never been observed.
-- `409 Conflict` if the PID was already claimed.
 
 The server uses `ApiConfig` to load `DATABASE_URL` / `API_BIND_ADDRESS` before
 constructing `SeaOrmStorage`, so it stays decoupled from monitor-only

@@ -12,8 +12,8 @@ use anon_ticket_domain::init_telemetry;
 use anon_ticket_domain::{
     derive_service_token,
     storage::{
-        ClaimOutcome, NewServiceToken, PaymentStatus, PaymentStore, RevokeTokenRequest,
-        ServiceToken, TokenStore,
+        ClaimOutcome, NewServiceToken, PaymentRecord, PaymentStatus, PaymentStore,
+        RevokeTokenRequest, ServiceToken, ServiceTokenRecord, TokenStore,
     },
     AbuseSignal, AbuseTracker, ApiConfig, ConfigError, InMemoryPidCache, PaymentId, PidCache,
     PidFormatError, StorageError, TelemetryConfig, TelemetryError, TelemetryGuard,
@@ -69,8 +69,6 @@ enum ApiError {
     InvalidPid(#[from] PidFormatError),
     #[error("payment not found")]
     NotFound,
-    #[error("payment already claimed")]
-    AlreadyClaimed,
     #[error("token already revoked")]
     AlreadyRevoked,
     #[error("storage failure: {0}")]
@@ -82,7 +80,6 @@ impl ResponseError for ApiError {
         match self {
             ApiError::InvalidPid(_) => StatusCode::BAD_REQUEST,
             ApiError::NotFound => StatusCode::NOT_FOUND,
-            ApiError::AlreadyClaimed => StatusCode::CONFLICT,
             ApiError::AlreadyRevoked => StatusCode::CONFLICT,
             ApiError::Storage(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
@@ -178,26 +175,22 @@ async fn handle_success(
     pid: PaymentId,
     outcome: ClaimOutcome,
 ) -> Result<HttpResponse, ApiError> {
-    metrics::counter!("api_redeem_requests_total", 1, "status" => "success");
     let service_token = derive_service_token(&pid, &outcome.txid);
-    state
+    let token_record = state
         .storage
         .insert_token(NewServiceToken {
-            token: service_token.clone(),
+            token: service_token,
             pid: pid.clone(),
             amount: outcome.amount,
-            issued_at: Utc::now(),
+            issued_at: outcome.claimed_at,
             abuse_score: 0,
         })
         .await?;
+    metrics::counter!("api_redeem_requests_total", 1, "status" => "success");
     state.cache.mark_present(&pid);
     state.abuse_tracker.reset(pid.as_str());
 
-    Ok(HttpResponse::Ok().json(RedeemResponse {
-        status: "success".to_string(),
-        service_token: service_token.into_inner(),
-        balance: outcome.amount,
-    }))
+    Ok(HttpResponse::Ok().json(build_redeem_response("success", token_record)))
 }
 
 async fn handle_absent(state: &AppState, pid: PaymentId) -> Result<HttpResponse, ApiError> {
@@ -205,8 +198,10 @@ async fn handle_absent(state: &AppState, pid: PaymentId) -> Result<HttpResponse,
     match maybe_payment {
         Some(record) if record.status == PaymentStatus::Claimed => {
             state.cache.mark_present(&pid);
+            let token = ensure_token_record(state, &pid, &record).await?;
+            state.abuse_tracker.reset(pid.as_str());
             metrics::counter!("api_redeem_requests_total", 1, "status" => "already_claimed");
-            Err(ApiError::AlreadyClaimed)
+            Ok(HttpResponse::Ok().json(build_redeem_response("already_claimed", token)))
         }
         Some(_) => {
             state.cache.mark_present(&pid);
@@ -229,6 +224,37 @@ async fn metrics_handler(state: Data<AppState>) -> HttpResponse {
     HttpResponse::Ok()
         .content_type("text/plain; version=0.0.4")
         .body(body)
+}
+
+fn build_redeem_response(status: &str, record: ServiceTokenRecord) -> RedeemResponse {
+    RedeemResponse {
+        status: status.to_string(),
+        service_token: record.token.into_inner(),
+        balance: record.amount,
+    }
+}
+
+async fn ensure_token_record(
+    state: &AppState,
+    pid: &PaymentId,
+    payment: &PaymentRecord,
+) -> Result<ServiceTokenRecord, ApiError> {
+    let token = derive_service_token(pid, &payment.txid);
+    if let Some(existing) = state.storage.find_token(&token).await? {
+        return Ok(existing);
+    }
+    let issued_at = payment.claimed_at.unwrap_or_else(Utc::now);
+    state
+        .storage
+        .insert_token(NewServiceToken {
+            token,
+            pid: pid.clone(),
+            amount: payment.amount,
+            issued_at,
+            abuse_score: 0,
+        })
+        .await
+        .map_err(ApiError::from)
 }
 
 #[actix_web::main]
@@ -406,11 +432,12 @@ mod tests {
     }
 
     #[actix_web::test]
-    async fn duplicate_claims_conflict() {
+    async fn duplicate_claims_return_existing_token() {
         let storage = storage().await;
+        let pid = test_pid();
         storage
             .insert_payment(NewPayment {
-                pid: test_pid(),
+                pid: pid.clone(),
                 txid: "tx1".into(),
                 amount: 42,
                 block_height: 100,
@@ -418,7 +445,7 @@ mod tests {
             })
             .await
             .unwrap();
-        storage.claim_payment(&test_pid()).await.unwrap();
+        storage.claim_payment(&pid).await.unwrap();
 
         let app = test::init_service(
             App::new()
@@ -429,11 +456,16 @@ mod tests {
         let req = test::TestRequest::post()
             .uri("/api/v1/redeem")
             .set_json(&RedeemRequest {
-                pid: test_pid().into_inner(),
+                pid: pid.clone().into_inner(),
             })
             .to_request();
         let resp = test::call_service(&app, req).await;
-        assert_eq!(resp.status(), StatusCode::CONFLICT);
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = to_bytes(resp.into_body()).await.unwrap();
+        let parsed: RedeemResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(parsed.status, "already_claimed");
+        let expected = derive_service_token(&pid, "tx1");
+        assert_eq!(parsed.service_token, expected.into_inner());
     }
 
     #[actix_web::test]
