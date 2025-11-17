@@ -71,6 +71,7 @@ async fn run(ctx: MonitorCtx) -> Result<(), MonitorError> {
             Ok(transfers) => {
                 metrics::counter!("monitor_rpc_calls_total", 1, "result" => "ok");
                 let mut max_height = height;
+                let mut advanced = false;
                 let entries = transfers
                     .incoming
                     .into_iter()
@@ -82,11 +83,13 @@ async fn run(ctx: MonitorCtx) -> Result<(), MonitorError> {
                     if let Some(h) = entry.height {
                         max_height = max_height.max(h as u64);
                     }
-                    process_entry(&ctx, entry).await?;
+                    if process_entry(&ctx, entry).await? {
+                        advanced = true;
+                    }
                 }
 
-                if max_height > height {
-                    height = max_height;
+                if advanced {
+                    height = max_height + 1;
                     ctx.storage.upsert_last_processed_height(height).await?;
                     metrics::gauge!("monitor_last_height", height as f64);
                 }

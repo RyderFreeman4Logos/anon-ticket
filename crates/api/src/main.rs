@@ -101,6 +101,14 @@ async fn redeem_handler(
         state.abuse_tracker.record(&payload.pid);
     })?;
 
+    if !state.cache.might_contain(&pid) {
+        metrics::counter!("api_redeem_requests_total", 1, "status" => "not_found");
+        if let AbuseSignal::Escalated { attempts } = state.abuse_tracker.record(pid.as_str()) {
+            tracing::warn!(pid = pid.as_str(), attempts, "pid probing escalated");
+        }
+        return Err(ApiError::NotFound);
+    }
+
     match state.storage.claim_payment(&pid).await? {
         Some(outcome) => handle_success(&state, pid, outcome).await,
         None => handle_absent(&state, pid).await,
@@ -479,6 +487,27 @@ mod tests {
         assert_eq!(parsed.status, "already_claimed");
         let expected = derive_service_token(&pid, "tx1");
         assert_eq!(parsed.service_token, expected.into_inner());
+    }
+
+    #[actix_web::test]
+    async fn cached_absence_short_circuits() {
+        let state = with_cache(storage().await);
+        let pid = test_pid();
+        state.cache.mark_absent(&pid);
+        let app = test::init_service(
+            App::new()
+                .app_data(Data::new(state))
+                .route("/api/v1/redeem", web::post().to(redeem_handler)),
+        )
+        .await;
+        let req = test::TestRequest::post()
+            .uri("/api/v1/redeem")
+            .set_json(&RedeemRequest {
+                pid: pid.into_inner(),
+            })
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     }
 
     #[actix_web::test]
