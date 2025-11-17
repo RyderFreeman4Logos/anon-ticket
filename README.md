@@ -68,3 +68,27 @@ enforce the security rule that every client-supplied PID is a 32-character hex
 string. Use `derive_service_token(pid, txid)` to deterministically derive the
 service token returned to clients—both helpers rely on SHA3-256 to match the
 project's threat model.
+
+## Redemption API
+
+`anon_ticket_api` hosts an Actix-Web server with a single endpoint:
+
+```
+POST /api/v1/redeem
+{
+  "pid": "0123456789abcdef0123456789abcdef"
+}
+```
+
+Responses:
+
+- `200 OK` with `{ "status": "success", "service_token": "…", "balance": 123 }` when the
+  payment exists and is unclaimed (a token record is inserted via the shared
+  storage layer).
+- `400 Bad Request` if the PID is not a 32-char hex string.
+- `404 Not Found` if the PID has never been observed.
+- `409 Conflict` if the PID was already claimed.
+
+The server uses `BootstrapConfig` to load `DATABASE_URL` / `API_BIND_ADDRESS`
+before constructing `SeaOrmStorage`, so it inherits the same environment
+variables documented earlier.
