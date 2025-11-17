@@ -10,12 +10,15 @@ use actix_web::{
 };
 use anon_ticket_domain::{
     derive_service_token,
-    storage::{ClaimOutcome, NewServiceToken, PaymentStatus, PaymentStore, TokenStore},
+    storage::{
+        ClaimOutcome, NewServiceToken, PaymentStatus, PaymentStore, RevokeTokenRequest,
+        ServiceToken, TokenStore,
+    },
     BootstrapConfig, ConfigError, InMemoryPidCache, PaymentId, PidCache, PidFormatError,
     StorageError,
 };
 use anon_ticket_storage::SeaOrmStorage;
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -42,6 +45,21 @@ struct ErrorBody {
     error: String,
 }
 
+#[derive(Debug, Serialize)]
+struct TokenStatusResponse {
+    status: String,
+    amount: i64,
+    issued_at: DateTime<Utc>,
+    revoked_at: Option<DateTime<Utc>>,
+    abuse_score: i16,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct RevokeRequest {
+    reason: Option<String>,
+    abuse_score: Option<i16>,
+}
+
 #[derive(Debug, Error)]
 enum ApiError {
     #[error("invalid payment id: {0}")]
@@ -50,6 +68,8 @@ enum ApiError {
     NotFound,
     #[error("payment already claimed")]
     AlreadyClaimed,
+    #[error("token already revoked")]
+    AlreadyRevoked,
     #[error("storage failure: {0}")]
     Storage(#[from] StorageError),
 }
@@ -60,6 +80,7 @@ impl ResponseError for ApiError {
             ApiError::InvalidPid(_) => StatusCode::BAD_REQUEST,
             ApiError::NotFound => StatusCode::NOT_FOUND,
             ApiError::AlreadyClaimed => StatusCode::CONFLICT,
+            ApiError::AlreadyRevoked => StatusCode::CONFLICT,
             ApiError::Storage(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -81,6 +102,62 @@ async fn redeem_handler(
         Some(outcome) => handle_success(&state, pid, outcome).await,
         None => handle_absent(&state, pid).await,
     }
+}
+
+async fn token_status_handler(
+    state: Data<AppState>,
+    path: web::Path<String>,
+) -> Result<HttpResponse, ApiError> {
+    let token = ServiceToken::new(path.into_inner());
+    let record = state
+        .storage
+        .find_token(&token)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    let status = if record.revoked_at.is_some() {
+        "revoked"
+    } else {
+        "active"
+    };
+    Ok(HttpResponse::Ok().json(TokenStatusResponse {
+        status: status.to_string(),
+        amount: record.amount,
+        issued_at: record.issued_at,
+        revoked_at: record.revoked_at,
+        abuse_score: record.abuse_score,
+    }))
+}
+
+async fn revoke_token_handler(
+    state: Data<AppState>,
+    path: web::Path<String>,
+    payload: web::Json<RevokeRequest>,
+) -> Result<HttpResponse, ApiError> {
+    let token = ServiceToken::new(path.into_inner());
+    let existing = state
+        .storage
+        .find_token(&token)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    if existing.revoked_at.is_some() {
+        return Err(ApiError::AlreadyRevoked);
+    }
+    let updated = state
+        .storage
+        .revoke_token(RevokeTokenRequest {
+            token,
+            reason: payload.reason.clone(),
+            abuse_score: payload.abuse_score,
+        })
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    Ok(HttpResponse::Ok().json(TokenStatusResponse {
+        status: "revoked".to_string(),
+        amount: updated.amount,
+        issued_at: updated.issued_at,
+        revoked_at: updated.revoked_at,
+        abuse_score: updated.abuse_score,
+    }))
 }
 
 async fn handle_success(
@@ -157,6 +234,11 @@ async fn run() -> Result<(), BootstrapError> {
             .app_data(Data::new(state.clone()))
             .wrap(Logger::default())
             .route("/api/v1/redeem", web::post().to(redeem_handler))
+            .route("/api/v1/token/{token}", web::get().to(token_status_handler))
+            .route(
+                "/api/v1/token/{token}/revoke",
+                web::post().to(revoke_token_handler),
+            )
     })
     .bind(config.api_bind_address())?
     .run()
@@ -169,7 +251,7 @@ async fn run() -> Result<(), BootstrapError> {
 mod tests {
     use super::*;
     use actix_web::{body::to_bytes, test, App};
-    use anon_ticket_domain::storage::NewPayment;
+    use anon_ticket_domain::storage::{NewPayment, NewServiceToken};
 
     fn test_pid() -> PaymentId {
         PaymentId::new("0123456789abcdef0123456789abcdef")
@@ -186,6 +268,22 @@ mod tests {
             storage,
             cache: Arc::new(InMemoryPidCache::default()),
         }
+    }
+
+    async fn insert_token(storage: &SeaOrmStorage) -> ServiceToken {
+        let token =
+            ServiceToken::new("deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef");
+        storage
+            .insert_token(NewServiceToken {
+                token: token.clone(),
+                pid: test_pid(),
+                amount: 42,
+                issued_at: Utc::now(),
+                abuse_score: 0,
+            })
+            .await
+            .unwrap();
+        token
     }
 
     #[actix_web::test]
@@ -289,5 +387,54 @@ mod tests {
             .to_request();
         let resp = test::call_service(&app, req).await;
         assert_eq!(resp.status(), StatusCode::CONFLICT);
+    }
+
+    #[actix_web::test]
+    async fn token_status_returns_active() {
+        let storage = storage().await;
+        let token = insert_token(&storage).await;
+        let app = test::init_service(
+            App::new()
+                .app_data(Data::new(with_cache(storage)))
+                .route("/api/v1/token/{token}", web::get().to(token_status_handler)),
+        )
+        .await;
+        let req = test::TestRequest::get()
+            .uri(&format!("/api/v1/token/{}", token.as_str()))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[actix_web::test]
+    async fn revoke_token_marks_revoked() {
+        let storage = storage().await;
+        let token = insert_token(&storage).await;
+        let app = test::init_service(
+            App::new()
+                .app_data(Data::new(with_cache(storage)))
+                .route("/api/v1/token/{token}", web::get().to(token_status_handler))
+                .route(
+                    "/api/v1/token/{token}/revoke",
+                    web::post().to(revoke_token_handler),
+                ),
+        )
+        .await;
+
+        let req = test::TestRequest::post()
+            .uri(&format!("/api/v1/token/{}/revoke", token.as_str()))
+            .set_json(&RevokeRequest {
+                reason: Some("abuse".into()),
+                abuse_score: Some(5),
+            })
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let req = test::TestRequest::get()
+            .uri(&format!("/api/v1/token/{}", token.as_str()))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), StatusCode::OK);
     }
 }

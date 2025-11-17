@@ -93,6 +93,13 @@ The server uses `BootstrapConfig` to load `DATABASE_URL` / `API_BIND_ADDRESS`
 before constructing `SeaOrmStorage`, so it inherits the same environment
 variables documented earlier.
 
+### Token Introspection & Revocation
+
+- `GET /api/v1/token/{token}` – returns the token status (`active`/`revoked`),
+  amount, `issued_at`, optional `revoked_at`, and `abuse_score`.
+- `POST /api/v1/token/{token}/revoke` – accepts `{ "reason": "...", "abuse_score": 5 }`
+  to mark a service token as revoked; subsequent lookups report `revoked`.
+
 ### PID Cache
 
 The API keeps an in-memory PID cache (`InMemoryPidCache`) that records PIDs

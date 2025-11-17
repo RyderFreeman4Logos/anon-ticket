@@ -20,7 +20,7 @@ sha3 = "0.10"
 hex = "0.4"
 thiserror = "1"
 async-trait = "0.1"
-chrono = { version = "0.4", default-features = false, features = ["clock"] }
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
 sea-orm = { version = "0.12", default-features = false, features = ["macros", "runtime-tokio-rustls", "with-chrono"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 actix-web = { version = "4", features = ["macros"] }
