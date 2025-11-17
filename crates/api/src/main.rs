@@ -77,10 +77,6 @@ async fn redeem_handler(
 ) -> Result<HttpResponse, ApiError> {
     let pid = PaymentId::parse(&payload.pid)?;
 
-    if !state.cache.might_contain(&pid) {
-        return Err(ApiError::NotFound);
-    }
-
     match state.storage.claim_payment(&pid).await? {
         Some(outcome) => handle_success(&state, pid, outcome).await,
         None => handle_absent(&state, pid).await,
