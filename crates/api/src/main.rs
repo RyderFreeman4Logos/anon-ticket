@@ -244,10 +244,10 @@ async fn ensure_token_record(
         return Ok(existing);
     }
     let issued_at = payment.claimed_at.unwrap_or_else(Utc::now);
-    state
+    match state
         .storage
         .insert_token(NewServiceToken {
-            token,
+            token: token.clone(),
             pid: pid.clone(),
             amount: payment.amount,
             issued_at,
@@ -255,6 +255,19 @@ async fn ensure_token_record(
         })
         .await
         .map_err(ApiError::from)
+    {
+        Ok(record) => Ok(record),
+        Err(ApiError::Storage(err))
+            if err.to_string().contains("UNIQUE") || err.to_string().contains("unique") =>
+        {
+            state
+                .storage
+                .find_token(&token)
+                .await?
+                .ok_or(ApiError::NotFound)
+        }
+        Err(other) => Err(other),
+    }
 }
 
 #[actix_web::main]
