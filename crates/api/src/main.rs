@@ -105,11 +105,7 @@ async fn redeem_handler(
     })?;
 
     if !state.cache.might_contain(&pid) {
-        metrics::counter!("api_redeem_requests_total", 1, "status" => "not_found");
-        if let AbuseSignal::Escalated { attempts } = state.abuse_tracker.record(pid.as_str()) {
-            tracing::warn!(pid = pid.as_str(), attempts, "pid probing escalated");
-        }
-        return Err(ApiError::NotFound);
+        metrics::counter!("api_redeem_cache_hints_total", 1, "hint" => "absent");
     }
 
     match state.storage.claim_payment(&pid).await? {
@@ -585,10 +581,23 @@ mod tests {
     }
 
     #[actix_web::test]
-    async fn cached_absence_short_circuits() {
-        let state = with_cache(storage().await);
+    async fn cached_absence_does_not_block_newly_seen_payment() {
+        let storage = storage().await;
         let pid = test_pid();
+        let state = with_cache(storage.clone());
         state.cache.mark_absent(&pid);
+
+        storage
+            .insert_payment(NewPayment {
+                pid: pid.clone(),
+                txid: "tx-new".into(),
+                amount: 7,
+                block_height: 55,
+                detected_at: Utc::now(),
+            })
+            .await
+            .unwrap();
+
         let app = test::init_service(
             App::new()
                 .app_data(Data::new(state))
@@ -602,7 +611,10 @@ mod tests {
             })
             .to_request();
         let resp = test::call_service(&app, req).await;
-        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = to_bytes(resp.into_body()).await.unwrap();
+        let parsed: RedeemResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(parsed.status, "success");
     }
 
     #[cfg(unix)]
