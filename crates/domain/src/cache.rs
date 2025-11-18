@@ -24,6 +24,11 @@ pub trait PidCache: Send + Sync {
 
     /// Marks the PID as absent for a period of time.
     fn mark_absent(&self, pid: &PaymentId);
+
+    /// Returns how long the PID has been cached as absent, if the implementation tracks it.
+    fn negative_entry_age(&self, _pid: &PaymentId) -> Option<Duration> {
+        None
+    }
 }
 
 #[derive(Debug)]
@@ -51,6 +56,14 @@ impl PidCache for InMemoryPidCache {
     fn mark_absent(&self, pid: &PaymentId) {
         let mut negatives = self.negatives.write().unwrap();
         negatives.insert(pid.as_str().to_string(), Instant::now());
+    }
+
+    fn negative_entry_age(&self, pid: &PaymentId) -> Option<Duration> {
+        self.prune_expired();
+        let negatives = self.negatives.read().unwrap();
+        negatives
+            .get(pid.as_str())
+            .map(|inserted| Instant::now().saturating_duration_since(*inserted))
     }
 }
 

@@ -1,6 +1,6 @@
 //! Actix-Web API exposing the redemption endpoint.
 
-use std::{io, path::Path, sync::Arc};
+use std::{io, path::Path, sync::Arc, time::Duration};
 
 #[cfg(unix)]
 use std::fs;
@@ -25,6 +25,8 @@ use anon_ticket_storage::SeaOrmStorage;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+
+const PID_CACHE_NEGATIVE_GRACE: Duration = Duration::from_millis(500);
 
 #[derive(Clone)]
 struct AppState {
@@ -105,12 +107,20 @@ async fn redeem_handler(
     })?;
 
     if !state.cache.might_contain(&pid) {
-        metrics::counter!("api_redeem_cache_hints_total", 1, "hint" => "absent");
-        metrics::counter!("api_redeem_requests_total", 1, "status" => "cache_absent");
-        if let AbuseSignal::Escalated { attempts } = state.abuse_tracker.record(pid.as_str()) {
-            tracing::warn!(pid = pid.as_str(), attempts, "pid probing escalated");
+        let should_short_circuit = state
+            .cache
+            .negative_entry_age(&pid)
+            .is_some_and(|age| age < PID_CACHE_NEGATIVE_GRACE);
+        if should_short_circuit {
+            metrics::counter!("api_redeem_cache_hints_total", 1, "hint" => "absent_blocked");
+            metrics::counter!("api_redeem_requests_total", 1, "status" => "cache_absent");
+            if let AbuseSignal::Escalated { attempts } = state.abuse_tracker.record(pid.as_str()) {
+                tracing::warn!(pid = pid.as_str(), attempts, "pid probing escalated");
+            }
+            return Err(ApiError::NotFound);
         }
-        return Err(ApiError::NotFound);
+
+        metrics::counter!("api_redeem_cache_hints_total", 1, "hint" => "absent_probe");
     }
 
     match state.storage.claim_payment(&pid).await? {
@@ -627,6 +637,45 @@ mod tests {
             .to_request();
         let resp = test::call_service(&app, req).await;
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[actix_web::test]
+    async fn cached_absence_grace_window_allows_redemption() {
+        let storage = storage().await;
+        let pid = test_pid();
+        let state = with_cache_ttl(storage.clone(), Duration::from_secs(60));
+        state.cache.mark_absent(&pid);
+
+        storage
+            .insert_payment(NewPayment {
+                pid: pid.clone(),
+                txid: "tx-grace".into(),
+                amount: 9,
+                block_height: 56,
+                detected_at: Utc::now(),
+            })
+            .await
+            .unwrap();
+
+        sleep(PID_CACHE_NEGATIVE_GRACE + Duration::from_millis(50)).await;
+
+        let app = test::init_service(
+            App::new()
+                .app_data(Data::new(state))
+                .route("/api/v1/redeem", web::post().to(redeem_handler)),
+        )
+        .await;
+        let req = test::TestRequest::post()
+            .uri("/api/v1/redeem")
+            .set_json(&RedeemRequest {
+                pid: pid.into_inner(),
+            })
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = to_bytes(resp.into_body()).await.unwrap();
+        let parsed: RedeemResponse = serde_json::from_slice(&body).unwrap();
+        assert_eq!(parsed.status, "success");
     }
 
     #[actix_web::test]
