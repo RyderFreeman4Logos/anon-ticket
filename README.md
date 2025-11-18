@@ -149,14 +149,10 @@ validates each PID via the domain helpers, and persists eligible payments using
 - `MONERO_RPC_URL`
 - `MONITOR_START_HEIGHT`
 
-RPC endpoints that enforce HTTP Basic Auth can optionally set:
-
-- `MONERO_RPC_USER`
-- `MONERO_RPC_PASS`
-
-When both variables are absent or blank, the monitor skips the `Authorization`
-header entirely, making it safe to point at trusted endpoints that do not need
-credentials.
+The monitor assumes your `monero-wallet-rpc` is exposed without HTTP auth (run
+it with `--disable-rpc-login` or only behind a trusted proxy). If you need
+Digest/Basic auth, place a proxy in front of the wallet that terminates those
+schemes and forwards anonymous requests to the monitor.
 
 Optional telemetry settings mirror the API (`MONITOR_LOG_FILTER`,
 `MONITOR_METRICS_ADDRESS`). When `MONITOR_METRICS_ADDRESS` is provided, the
@@ -189,10 +185,8 @@ deployment is:
    daemon (`--daemon-address <node>` or `--daemon-host 127.0.0.1 --daemon-port
    18081`) and load the watch-only file: `monero-wallet-rpc --wallet-file
    watch-only --password "" --daemon-address <daemon> --rpc-bind-port 18082 \
-   --confirm-external-bind`. Supply `--rpc-login user:pass` if you want HTTP
-   Basic Auth, then mirror those credentials via `MONERO_RPC_USER`/
-   `MONERO_RPC_PASS`; otherwise leave them unset and the monitor will send no
-   `Authorization` header.
+   --confirm-external-bind --disable-rpc-login`. The `--disable-rpc-login`
+   flag ensures the monitor can talk to the RPC without HTTP authentication.
 4. **Wire environment variables.** Set `MONERO_RPC_URL` (for example
    `http://127.0.0.1:18082/json_rpc`) and `MONITOR_START_HEIGHT` to the block
    height where you want ingestion to begin. All other `.env` entries stay the
