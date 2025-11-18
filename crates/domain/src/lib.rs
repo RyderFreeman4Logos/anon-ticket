@@ -216,7 +216,9 @@ pub mod storage {
 
     impl PaymentId {
         pub fn new(value: impl Into<String>) -> Self {
-            Self(value.into())
+            let mut owned = value.into();
+            owned.make_ascii_lowercase();
+            Self(owned)
         }
 
         pub fn parse(pid: &str) -> Result<Self, crate::PidFormatError> {
@@ -516,6 +518,15 @@ mod tests {
     fn payment_id_parse_checks_format() {
         assert!(PaymentId::parse("0123456789abcdef0123456789abcdef").is_ok());
         assert!(PaymentId::parse("not-valid").is_err());
+    }
+
+    #[test]
+    fn payment_id_canonicalizes_case() {
+        let pid = PaymentId::parse("ABCDEFABCDEFABCDEFABCDEFABCDEFAB").unwrap();
+        assert_eq!(pid.as_str(), "abcdefabcdefabcdefabcdefabcdefab");
+
+        let raw = PaymentId::new("FEDCBA9876543210FEDCBA9876543210");
+        assert_eq!(raw.as_str(), "fedcba9876543210fedcba9876543210");
     }
 
     #[test]
