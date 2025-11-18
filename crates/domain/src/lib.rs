@@ -22,6 +22,9 @@ pub use telemetry::*;
 pub struct ApiConfig {
     database_url: String,
     api_bind_address: String,
+    api_unix_socket: Option<String>,
+    internal_bind_address: Option<String>,
+    internal_unix_socket: Option<String>,
 }
 
 impl ApiConfig {
@@ -32,6 +35,9 @@ impl ApiConfig {
         Ok(Self {
             database_url: get_required_var("DATABASE_URL")?,
             api_bind_address: get_required_var("API_BIND_ADDRESS")?,
+            api_unix_socket: get_optional_var("API_UNIX_SOCKET"),
+            internal_bind_address: get_optional_var("API_INTERNAL_BIND_ADDRESS"),
+            internal_unix_socket: get_optional_var("API_INTERNAL_UNIX_SOCKET"),
         })
     }
 
@@ -41,6 +47,22 @@ impl ApiConfig {
 
     pub fn api_bind_address(&self) -> &str {
         &self.api_bind_address
+    }
+
+    pub fn api_unix_socket(&self) -> Option<&str> {
+        self.api_unix_socket.as_deref()
+    }
+
+    pub fn internal_bind_address(&self) -> Option<&str> {
+        self.internal_bind_address.as_deref()
+    }
+
+    pub fn internal_unix_socket(&self) -> Option<&str> {
+        self.internal_unix_socket.as_deref()
+    }
+
+    pub fn has_internal_listener(&self) -> bool {
+        self.internal_bind_address.is_some() || self.internal_unix_socket.is_some()
     }
 }
 
@@ -113,6 +135,17 @@ impl BootstrapConfig {
 
 fn get_required_var(key: &'static str) -> Result<String, ConfigError> {
     env::var(key).map_err(|_| ConfigError::MissingVar { key })
+}
+
+fn get_optional_var(key: &'static str) -> Option<String> {
+    env::var(key).ok().and_then(|value| {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    })
 }
 
 pub(crate) fn hydrate_env_file() -> Result<(), ConfigError> {
@@ -358,6 +391,9 @@ mod tests {
     fn set_env() {
         env::set_var("DATABASE_URL", "sqlite://test.db");
         env::set_var("API_BIND_ADDRESS", "127.0.0.1:8080");
+        env::remove_var("API_UNIX_SOCKET");
+        env::remove_var("API_INTERNAL_BIND_ADDRESS");
+        env::remove_var("API_INTERNAL_UNIX_SOCKET");
         env::set_var("MONERO_RPC_URL", "http://localhost:18082/json_rpc");
         env::set_var("MONERO_RPC_USER", "user");
         env::set_var("MONERO_RPC_PASS", "pass");
@@ -396,6 +432,29 @@ mod tests {
         assert_eq!(config.api_bind_address(), "127.0.0.1:9999");
 
         // Restore defaults for subsequent tests in this module.
+        set_env();
+    }
+
+    #[test]
+    fn api_config_supports_unix_and_internal_listeners() {
+        let _guard = ENV_GUARD.lock().unwrap();
+        set_env();
+        env::set_var("API_UNIX_SOCKET", "/tmp/api.sock");
+        env::set_var("API_INTERNAL_BIND_ADDRESS", "127.0.0.1:9090");
+        env::set_var("API_INTERNAL_UNIX_SOCKET", "/tmp/api-internal.sock");
+
+        let config = ApiConfig::load_from_env().expect("config loads");
+        assert_eq!(config.api_unix_socket(), Some("/tmp/api.sock"));
+        assert_eq!(config.internal_bind_address(), Some("127.0.0.1:9090"));
+        assert_eq!(
+            config.internal_unix_socket(),
+            Some("/tmp/api-internal.sock")
+        );
+        assert!(config.has_internal_listener());
+
+        env::remove_var("API_UNIX_SOCKET");
+        env::remove_var("API_INTERNAL_BIND_ADDRESS");
+        env::remove_var("API_INTERNAL_UNIX_SOCKET");
         set_env();
     }
 

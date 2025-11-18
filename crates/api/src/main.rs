@@ -1,6 +1,9 @@
 //! Actix-Web API exposing the redemption endpoint.
 
-use std::{io, sync::Arc};
+use std::{io, path::Path, sync::Arc};
+
+#[cfg(unix)]
+use std::fs;
 
 use actix_web::{
     http::StatusCode,
@@ -234,6 +237,20 @@ async fn metrics_handler(state: Data<AppState>) -> HttpResponse {
         .body(body)
 }
 
+#[cfg(unix)]
+fn cleanup_socket(path: &str) -> io::Result<()> {
+    let socket_path = Path::new(path);
+    if socket_path.exists() {
+        fs::remove_file(socket_path)?;
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn cleanup_socket(_path: &str) -> io::Result<()> {
+    Ok(())
+}
+
 fn build_redeem_response(status: &str, record: ServiceTokenRecord) -> RedeemResponse {
     RedeemResponse {
         status: status.to_string(),
@@ -314,21 +331,97 @@ async fn run() -> Result<(), BootstrapError> {
         abuse_tracker,
     };
 
-    HttpServer::new(move || {
-        App::new()
-            .app_data(Data::new(state.clone()))
+    let include_metrics_on_public = !config.has_internal_listener();
+    let public_state = state.clone();
+    let mut public_server = HttpServer::new(move || {
+        let mut app = App::new()
+            .app_data(Data::new(public_state.clone()))
             .wrap(Logger::default())
             .route("/api/v1/redeem", web::post().to(redeem_handler))
             .route("/api/v1/token/{token}", web::get().to(token_status_handler))
             .route(
                 "/api/v1/token/{token}/revoke",
                 web::post().to(revoke_token_handler),
-            )
-            .route("/metrics", web::get().to(metrics_handler))
-    })
-    .bind(config.api_bind_address())?
-    .run()
-    .await?;
+            );
+
+        if include_metrics_on_public {
+            app = app.route("/metrics", web::get().to(metrics_handler));
+        }
+
+        app
+    });
+
+    #[cfg(unix)]
+    {
+        if let Some(socket) = config.api_unix_socket() {
+            cleanup_socket(socket)?;
+            public_server = public_server.bind_uds(socket)?;
+        } else {
+            public_server = public_server.bind(config.api_bind_address())?;
+        }
+    }
+
+    #[cfg(not(unix))]
+    {
+        if let Some(socket) = config.api_unix_socket() {
+            return Err(BootstrapError::Io(io::Error::other(format!(
+                "unix socket '{socket}' requested but this platform does not support it"
+            ))));
+        }
+        public_server = public_server.bind(config.api_bind_address())?;
+    }
+
+    let public_server = public_server.run();
+
+    let internal_server = if config.has_internal_listener() {
+        let internal_state = state.clone();
+        let mut internal_server = HttpServer::new(move || {
+            App::new()
+                .app_data(Data::new(internal_state.clone()))
+                .wrap(Logger::default())
+                .route("/metrics", web::get().to(metrics_handler))
+        });
+
+        #[cfg(unix)]
+        {
+            if let Some(socket) = config.internal_unix_socket() {
+                cleanup_socket(socket)?;
+                internal_server = internal_server.bind_uds(socket)?;
+            } else if let Some(addr) = config.internal_bind_address() {
+                internal_server = internal_server.bind(addr)?;
+            } else {
+                return Err(BootstrapError::Io(io::Error::other(
+                    "internal listener configured but no bind target provided",
+                )));
+            }
+        }
+
+        #[cfg(not(unix))]
+        {
+            if let Some(socket) = config.internal_unix_socket() {
+                return Err(BootstrapError::Io(io::Error::other(format!(
+                    "internal unix socket '{socket}' requested but this platform does not support it"
+                ))));
+            }
+            if let Some(addr) = config.internal_bind_address() {
+                internal_server = internal_server.bind(addr)?;
+            } else {
+                return Err(BootstrapError::Io(io::Error::other(
+                    "internal listener configured but no bind target provided",
+                )));
+            }
+        }
+
+        Some(internal_server.run())
+    } else {
+        None
+    };
+
+    if let Some(internal) = internal_server {
+        tokio::try_join!(public_server, internal)?;
+    } else {
+        public_server.await?;
+    }
 
     Ok(())
 }
@@ -338,6 +431,8 @@ mod tests {
     use super::*;
     use actix_web::{body::to_bytes, test, App};
     use anon_ticket_domain::storage::{NewPayment, NewServiceToken};
+    #[cfg(unix)]
+    use std::fs;
 
     fn test_pid() -> PaymentId {
         PaymentId::new("0123456789abcdef0123456789abcdef")
@@ -508,6 +603,22 @@ mod tests {
             .to_request();
         let resp = test::call_service(&app, req).await;
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[cfg(unix)]
+    #[actix_web::test]
+    async fn cleanup_socket_removes_stale_file() {
+        let path = std::env::temp_dir().join(format!(
+            "anon-ticket-test-{}-{}.sock",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::write(&path, b"stub").expect("write socket file");
+        super::cleanup_socket(path.to_str().unwrap()).expect("cleanup succeeds");
+        assert!(!path.exists());
     }
 
     #[actix_web::test]

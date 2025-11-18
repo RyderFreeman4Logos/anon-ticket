@@ -32,9 +32,11 @@ so that the workspace builds end-to-end. Replace these stubs incrementally as th
 ## Environment Setup
 
 1. Copy `.env.example` to `.env` and update the values per deployment target.
-   These variables cover both binaries: `anon_ticket_api` only requires
-   `DATABASE_URL` / `API_BIND_ADDRESS` (validated by `ApiConfig`), while
-   `anon_ticket_monitor` enforces the full Monero RPC contract through
+   These variables cover both binaries: `anon_ticket_api` requires
+   `DATABASE_URL` / `API_BIND_ADDRESS` and optionally allows
+   `API_UNIX_SOCKET` to override the TCP listener plus
+   `API_INTERNAL_BIND_ADDRESS` / `API_INTERNAL_UNIX_SOCKET` for internal-only
+   routes. `anon_ticket_monitor` enforces the full Monero RPC contract through
    `BootstrapConfig`. Optional telemetry knobs (`API_LOG_FILTER`,
    `API_METRICS_ADDRESS`, `API_ABUSE_THRESHOLD`, `MONITOR_LOG_FILTER`,
    `MONITOR_METRICS_ADDRESS`) fine-tune tracing verbosity and open Prometheus
@@ -97,9 +99,20 @@ Responses:
 
 The server uses `ApiConfig` to load `DATABASE_URL` / `API_BIND_ADDRESS` before
 constructing `SeaOrmStorage`, so it stays decoupled from monitor-only
-environment requirements. Optional observability env vars allow tuning the log
-filter, metrics listener (`/metrics` HTTP route), and abuse-threshold used by
-the in-memory tracker that logs suspicious PID probes.
+environment requirements. When `API_UNIX_SOCKET` is configured the HTTP server
+binds to the provided Unix domain socket (cleaning up stale sockets) and
+falls back to TCP otherwise. Optional observability env vars allow tuning the
+log filter, metrics listener, and abuse-threshold used by the in-memory tracker
+that logs suspicious PID probes.
+
+### Internal API Listener
+
+Set `API_INTERNAL_BIND_ADDRESS` or `API_INTERNAL_UNIX_SOCKET` to expose
+internal-only routes (currently `/metrics`) on a dedicated TCP port or Unix
+socket. This keeps operational/administrative endpoints away from Tor-exposed
+listeners while still allowing the public API to operate over TCP or UDS. If
+no internal listener is configured, `/metrics` remains available on the public
+listener for backward compatibility.
 
 ### Token Introspection & Revocation
 
