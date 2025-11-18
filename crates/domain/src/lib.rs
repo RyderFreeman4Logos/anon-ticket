@@ -149,6 +149,9 @@ fn get_optional_var(key: &'static str) -> Option<String> {
 }
 
 pub(crate) fn hydrate_env_file() -> Result<(), ConfigError> {
+    if env::var_os("ANON_TICKET_SKIP_DOTENV").is_some() {
+        return Ok(());
+    }
     match dotenvy::dotenv() {
         Ok(_) => {}
         Err(dotenvy::Error::Io(err)) if err.kind() == std::io::ErrorKind::NotFound => {}
@@ -391,6 +394,7 @@ mod tests {
     static ENV_GUARD: Mutex<()> = Mutex::new(());
 
     fn set_env() {
+        env::set_var("ANON_TICKET_SKIP_DOTENV", "1");
         env::set_var("DATABASE_URL", "sqlite://test.db");
         env::set_var("API_BIND_ADDRESS", "127.0.0.1:8080");
         env::remove_var("API_UNIX_SOCKET");
@@ -424,6 +428,7 @@ mod tests {
     #[test]
     fn bootstrap_config_allows_missing_rpc_credentials() {
         let _guard = ENV_GUARD.lock().unwrap();
+        set_env();
         env::set_var("DATABASE_URL", "sqlite://test.db");
         env::set_var("API_BIND_ADDRESS", "127.0.0.1:8080");
         env::set_var("MONERO_RPC_URL", "http://localhost:18082/json_rpc");
@@ -441,6 +446,7 @@ mod tests {
     #[test]
     fn bootstrap_config_treats_blank_credentials_as_none() {
         let _guard = ENV_GUARD.lock().unwrap();
+        set_env();
         env::set_var("DATABASE_URL", "sqlite://test.db");
         env::set_var("API_BIND_ADDRESS", "127.0.0.1:8080");
         env::set_var("MONERO_RPC_URL", "http://localhost:18082/json_rpc");
@@ -458,6 +464,7 @@ mod tests {
     #[test]
     fn api_config_only_requires_api_env() {
         let _guard = ENV_GUARD.lock().unwrap();
+        set_env();
         env::remove_var("MONERO_RPC_URL");
         env::remove_var("MONERO_RPC_USER");
         env::remove_var("MONERO_RPC_PASS");

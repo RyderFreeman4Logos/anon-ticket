@@ -106,6 +106,11 @@ async fn redeem_handler(
 
     if !state.cache.might_contain(&pid) {
         metrics::counter!("api_redeem_cache_hints_total", 1, "hint" => "absent");
+        metrics::counter!("api_redeem_requests_total", 1, "status" => "cache_absent");
+        if let AbuseSignal::Escalated { attempts } = state.abuse_tracker.record(pid.as_str()) {
+            tracing::warn!(pid = pid.as_str(), attempts, "pid probing escalated");
+        }
+        return Err(ApiError::NotFound);
     }
 
     match state.storage.claim_payment(&pid).await? {
@@ -429,6 +434,8 @@ mod tests {
     use anon_ticket_domain::storage::{NewPayment, NewServiceToken};
     #[cfg(unix)]
     use std::fs;
+    use std::time::Duration;
+    use tokio::time::sleep;
 
     fn test_pid() -> PaymentId {
         PaymentId::new("0123456789abcdef0123456789abcdef")
@@ -445,14 +452,22 @@ mod tests {
         init_telemetry(&config).expect("telemetry inits")
     }
 
-    fn with_cache(storage: SeaOrmStorage) -> AppState {
+    fn build_state(storage: SeaOrmStorage, cache: Arc<InMemoryPidCache>) -> AppState {
         let telemetry = telemetry();
         AppState {
             storage,
-            cache: Arc::new(InMemoryPidCache::default()),
+            cache,
             abuse_tracker: AbuseTracker::new(telemetry.abuse_threshold()),
             telemetry,
         }
+    }
+
+    fn with_cache(storage: SeaOrmStorage) -> AppState {
+        build_state(storage, Arc::new(InMemoryPidCache::default()))
+    }
+
+    fn with_cache_ttl(storage: SeaOrmStorage, ttl: Duration) -> AppState {
+        build_state(storage, Arc::new(InMemoryPidCache::new(ttl)))
     }
 
     async fn insert_token(storage: &SeaOrmStorage) -> ServiceToken {
@@ -581,7 +596,7 @@ mod tests {
     }
 
     #[actix_web::test]
-    async fn cached_absence_does_not_block_newly_seen_payment() {
+    async fn cached_absence_short_circuits_requests() {
         let storage = storage().await;
         let pid = test_pid();
         let state = with_cache(storage.clone());
@@ -607,12 +622,58 @@ mod tests {
         let req = test::TestRequest::post()
             .uri("/api/v1/redeem")
             .set_json(&RedeemRequest {
-                pid: pid.into_inner(),
+                pid: pid.clone().into_inner(),
             })
             .to_request();
         let resp = test::call_service(&app, req).await;
-        assert_eq!(resp.status(), StatusCode::OK);
-        let body = to_bytes(resp.into_body()).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[actix_web::test]
+    async fn cached_absence_expires_and_allows_redemption() {
+        let storage = storage().await;
+        let pid = test_pid();
+        let state = with_cache_ttl(storage.clone(), Duration::from_millis(20));
+        state.cache.mark_absent(&pid);
+
+        storage
+            .insert_payment(NewPayment {
+                pid: pid.clone(),
+                txid: "tx-expire".into(),
+                amount: 11,
+                block_height: 56,
+                detected_at: Utc::now(),
+            })
+            .await
+            .unwrap();
+
+        let app = test::init_service(
+            App::new()
+                .app_data(Data::new(state.clone()))
+                .route("/api/v1/redeem", web::post().to(redeem_handler)),
+        )
+        .await;
+
+        let blocked = test::TestRequest::post()
+            .uri("/api/v1/redeem")
+            .set_json(&RedeemRequest {
+                pid: pid.clone().into_inner(),
+            })
+            .to_request();
+        let blocked_resp = test::call_service(&app, blocked).await;
+        assert_eq!(blocked_resp.status(), StatusCode::NOT_FOUND);
+
+        sleep(Duration::from_millis(30)).await;
+
+        let allowed = test::TestRequest::post()
+            .uri("/api/v1/redeem")
+            .set_json(&RedeemRequest {
+                pid: pid.into_inner(),
+            })
+            .to_request();
+        let allowed_resp = test::call_service(&app, allowed).await;
+        assert_eq!(allowed_resp.status(), StatusCode::OK);
+        let body = to_bytes(allowed_resp.into_body()).await.unwrap();
         let parsed: RedeemResponse = serde_json::from_slice(&body).unwrap();
         assert_eq!(parsed.status, "success");
     }

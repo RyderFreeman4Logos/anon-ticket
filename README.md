@@ -126,8 +126,10 @@ listener for backward compatibility.
 The API keeps an in-memory PID cache (`InMemoryPidCache`) that records PIDs
 observed via storage lookups. Negative entries allow the handler to short-circuit
 obvious 404 responses without hitting the database, while positive entries are
-recorded after successful claims. The abstraction lives in `anon_ticket_domain`
-so it can later be backed by Redis or a real Bloom filter.
+recorded after successful claims. Cached negatives expire after a short TTL
+(60s by default) so legitimate clients can retry once the monitor catches up.
+The abstraction lives in `anon_ticket_domain` so it can later be backed by Redis
+or a real Bloom filter.
 
 ### Metrics & Abuse Detection
 
