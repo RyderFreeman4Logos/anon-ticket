@@ -1,6 +1,5 @@
 [advisories]
 db-path = "https://github.com/rustsec/advisory-db"
-severity-threshold = "medium"
 ignore = []
 
 [bans]
@@ -21,34 +20,20 @@ allow = [
     "Unlicense",
     "Zlib",
     "Unicode-DFS-2016",
+    "Unicode-3.0",
+    "OpenSSL",
 ]
-deny = [
-    "GPL-1.0",
-    "GPL-1.0+",
-    "GPL-2.0",
-    "GPL-2.0+",
-    "GPL-3.0",
-    "GPL-3.0+",
-    "LGPL-2.0",
-    "LGPL-2.1",
-    "LGPL-3.0",
-    "AGPL-1.0",
-    "AGPL-3.0",
-]
-exception = []
+exceptions = []
 
 [[licenses.clarify]]
 name = "ring"
-license = "BSD-3-Clause"
 expression = "ISC AND MIT AND OpenSSL"
+license-files = []
 
 [[licenses.clarify]]
 name = "webpki"
-license = "BSD-3-Clause"
 expression = "BSD-3-Clause"
-
-[future-incompat]
-denied = true
+license-files = []
 
 [sources]
 unknown-registry = "deny"
