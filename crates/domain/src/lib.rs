@@ -71,7 +71,6 @@ impl ApiConfig {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BootstrapConfig {
     database_url: String,
-    api_bind_address: String,
     monero_rpc_url: String,
     monitor_start_height: u64,
 }
@@ -84,7 +83,6 @@ impl BootstrapConfig {
         hydrate_env_file()?;
 
         let database_url = get_required_var("DATABASE_URL")?;
-        let api_bind_address = get_required_var("API_BIND_ADDRESS")?;
         let monero_rpc_url = get_required_var("MONERO_RPC_URL")?;
         let monitor_start_height =
             get_required_var("MONITOR_START_HEIGHT")?
@@ -96,7 +94,6 @@ impl BootstrapConfig {
 
         Ok(Self {
             database_url,
-            api_bind_address,
             monero_rpc_url,
             monitor_start_height,
         })
@@ -104,10 +101,6 @@ impl BootstrapConfig {
 
     pub fn database_url(&self) -> &str {
         &self.database_url
-    }
-
-    pub fn api_bind_address(&self) -> &str {
-        &self.api_bind_address
     }
 
     pub fn monero_rpc_url(&self) -> &str {
