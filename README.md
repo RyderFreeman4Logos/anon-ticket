@@ -26,6 +26,13 @@ that toolchain plus `clippy`/`rustfmt` is sufficient to reproduce CI locally.
 
 Downstream crates can import only the module they need (for example `anon_ticket_domain::model::PaymentId`) while still benefiting from the crate-level re-exports for compatibility.
 
+### API Crate Internals
+
+- `application.rs`: loads config/telemetry, builds shared state, and wires Actix `HttpServer` instances (public + optional internal metrics listener).
+- `state.rs`: centralizes the shared `AppState` (storage handle, PID cache, telemetry guard, abuse tracker) with accessor methods for handlers and tests.
+- `handlers/`: `redeem.rs`, `token.rs`, and `metrics.rs` contain request/response DTOs plus the Actix handlers used by the routers.
+- `tests.rs`: houses the Actix integration tests that exercise redemption, caching, and token revocation, keeping `main.rs` minimal.
+
 ## Developer Commands
 
 Run the shared toolchain entry points from the workspace root:
