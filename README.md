@@ -145,9 +145,16 @@ validates each PID via the domain helpers, and persists eligible payments using
 `SeaOrmStorage`. Environment variables required:
 
 - `MONERO_RPC_URL`
+- `MONITOR_START_HEIGHT`
+
+RPC endpoints that enforce HTTP Basic Auth can optionally set:
+
 - `MONERO_RPC_USER`
 - `MONERO_RPC_PASS`
-- `MONITOR_START_HEIGHT`
+
+When both variables are absent or blank, the monitor skips the `Authorization`
+header entirely, making it safe to point at trusted endpoints that do not need
+credentials.
 
 Optional telemetry settings mirror the API (`MONITOR_LOG_FILTER`,
 `MONITOR_METRICS_ADDRESS`). When `MONITOR_METRICS_ADDRESS` is provided, the

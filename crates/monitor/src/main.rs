@@ -12,7 +12,7 @@ use anon_ticket_domain::{
 use anon_ticket_storage::SeaOrmStorage;
 use chrono::{DateTime, Utc};
 use client::{HeightResponse, JsonRpcRequest, JsonRpcResponse, TransferEntry, TransfersResponse};
-use reqwest::{Client, StatusCode};
+use reqwest::{Client, RequestBuilder, StatusCode};
 use serde::Serialize;
 use thiserror::Error;
 use tokio::time::sleep;
@@ -158,11 +158,7 @@ async fn fetch_transfers(
         params,
     };
 
-    let mut builder = ctx.client.post(ctx.config.monero_rpc_url());
-    builder = builder.basic_auth(
-        ctx.config.monero_rpc_user(),
-        Some(ctx.config.monero_rpc_pass()),
-    );
+    let builder = apply_basic_auth(ctx.client.post(ctx.config.monero_rpc_url()), &ctx.config);
 
     let resp = builder.json(&request).send().await?;
     if resp.status() != StatusCode::OK {
@@ -184,11 +180,7 @@ async fn fetch_wallet_height(ctx: &MonitorCtx) -> Result<u64, MonitorError> {
         params: Params,
     };
 
-    let mut builder = ctx.client.post(ctx.config.monero_rpc_url());
-    builder = builder.basic_auth(
-        ctx.config.monero_rpc_user(),
-        Some(ctx.config.monero_rpc_pass()),
-    );
+    let builder = apply_basic_auth(ctx.client.post(ctx.config.monero_rpc_url()), &ctx.config);
 
     let resp = builder.json(&request).send().await?;
     if resp.status() != StatusCode::OK {
@@ -197,4 +189,12 @@ async fn fetch_wallet_height(ctx: &MonitorCtx) -> Result<u64, MonitorError> {
 
     let parsed: JsonRpcResponse<HeightResponse> = resp.json().await?;
     Ok(parsed.result.height)
+}
+
+fn apply_basic_auth(builder: RequestBuilder, config: &BootstrapConfig) -> RequestBuilder {
+    if let Some(user) = config.monero_rpc_user() {
+        builder.basic_auth(user, config.monero_rpc_pass())
+    } else {
+        builder
+    }
 }

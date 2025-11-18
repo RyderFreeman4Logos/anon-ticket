@@ -73,8 +73,8 @@ pub struct BootstrapConfig {
     database_url: String,
     api_bind_address: String,
     monero_rpc_url: String,
-    monero_rpc_user: String,
-    monero_rpc_pass: String,
+    monero_rpc_user: Option<String>,
+    monero_rpc_pass: Option<String>,
     monitor_start_height: u64,
 }
 
@@ -88,8 +88,8 @@ impl BootstrapConfig {
         let database_url = get_required_var("DATABASE_URL")?;
         let api_bind_address = get_required_var("API_BIND_ADDRESS")?;
         let monero_rpc_url = get_required_var("MONERO_RPC_URL")?;
-        let monero_rpc_user = get_required_var("MONERO_RPC_USER")?;
-        let monero_rpc_pass = get_required_var("MONERO_RPC_PASS")?;
+        let monero_rpc_user = get_optional_var("MONERO_RPC_USER");
+        let monero_rpc_pass = get_optional_var("MONERO_RPC_PASS");
         let monitor_start_height =
             get_required_var("MONITOR_START_HEIGHT")?
                 .parse()
@@ -120,12 +120,12 @@ impl BootstrapConfig {
         &self.monero_rpc_url
     }
 
-    pub fn monero_rpc_user(&self) -> &str {
-        &self.monero_rpc_user
+    pub fn monero_rpc_user(&self) -> Option<&str> {
+        self.monero_rpc_user.as_deref()
     }
 
-    pub fn monero_rpc_pass(&self) -> &str {
-        &self.monero_rpc_pass
+    pub fn monero_rpc_pass(&self) -> Option<&str> {
+        self.monero_rpc_pass.as_deref()
     }
 
     pub fn monitor_start_height(&self) -> u64 {
@@ -415,6 +415,42 @@ mod tests {
         let config = BootstrapConfig::load_from_env().expect("config loads");
         assert_eq!(config.database_url(), "sqlite://test.db");
         assert_eq!(config.monitor_start_height(), 42);
+        assert_eq!(config.monero_rpc_user(), Some("user"));
+        assert_eq!(config.monero_rpc_pass(), Some("pass"));
+    }
+
+    #[test]
+    fn bootstrap_config_allows_missing_rpc_credentials() {
+        let _guard = ENV_GUARD.lock().unwrap();
+        env::set_var("DATABASE_URL", "sqlite://test.db");
+        env::set_var("API_BIND_ADDRESS", "127.0.0.1:8080");
+        env::set_var("MONERO_RPC_URL", "http://localhost:18082/json_rpc");
+        env::set_var("MONITOR_START_HEIGHT", "42");
+        env::remove_var("MONERO_RPC_USER");
+        env::remove_var("MONERO_RPC_PASS");
+
+        let config = BootstrapConfig::load_from_env().expect("config loads");
+        assert!(config.monero_rpc_user().is_none());
+        assert!(config.monero_rpc_pass().is_none());
+
+        set_env();
+    }
+
+    #[test]
+    fn bootstrap_config_treats_blank_credentials_as_none() {
+        let _guard = ENV_GUARD.lock().unwrap();
+        env::set_var("DATABASE_URL", "sqlite://test.db");
+        env::set_var("API_BIND_ADDRESS", "127.0.0.1:8080");
+        env::set_var("MONERO_RPC_URL", "http://localhost:18082/json_rpc");
+        env::set_var("MONITOR_START_HEIGHT", "42");
+        env::set_var("MONERO_RPC_USER", "   ");
+        env::set_var("MONERO_RPC_PASS", "");
+
+        let config = BootstrapConfig::load_from_env().expect("config loads");
+        assert!(config.monero_rpc_user().is_none());
+        assert!(config.monero_rpc_pass().is_none());
+
+        set_env();
     }
 
     #[test]
