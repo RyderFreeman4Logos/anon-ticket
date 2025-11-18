@@ -33,6 +33,13 @@ Downstream crates can import only the module they need (for example `anon_ticket
 - `handlers/`: `redeem.rs`, `token.rs`, and `metrics.rs` contain request/response DTOs plus the Actix handlers used by the routers.
 - `tests.rs`: houses the Actix integration tests that exercise redemption, caching, and token revocation, keeping `main.rs` minimal.
 
+### Monitor Crate Internals
+
+- `rpc/`: JSON-RPC request/response types plus a `TransferSource` trait and its `RpcTransferSource` implementation so we can swap the backend during tests.
+- `pipeline.rs`: ingestion logic that validates payment IDs, emits metrics, and persists qualifying transfers via the storage trait.
+- `worker.rs`: the long-running loop that pulls batches from a `TransferSource`, advances the stored height cursor, and exposes the shared `MonitorError` type.
+- `main.rs`: now limited to bootstrapping config/telemetry, wiring the SeaORM storage handle, and calling the worker with an RPC source.
+
 ## Developer Commands
 
 Run the shared toolchain entry points from the workspace root:

@@ -1,196 +1,35 @@
 //! Monitor binary that tails monero-wallet-rpc for qualifying transfers.
 
-mod client;
+mod pipeline;
+mod rpc;
+mod worker;
 
-use std::time::Duration;
+use std::io;
 
-use anon_ticket_domain::config::{BootstrapConfig, ConfigError};
-use anon_ticket_domain::model::{validate_pid, NewPayment, PaymentId};
-use anon_ticket_domain::services::telemetry::{init_telemetry, TelemetryConfig, TelemetryError};
-use anon_ticket_domain::storage::{MonitorStateStore, PaymentStore, StorageError};
+use anon_ticket_domain::config::BootstrapConfig;
+use anon_ticket_domain::services::telemetry::{init_telemetry, TelemetryConfig};
 use anon_ticket_storage::SeaOrmStorage;
-use chrono::{DateTime, Utc};
-use client::{HeightResponse, JsonRpcRequest, JsonRpcResponse, TransferEntry, TransfersResponse};
-use reqwest::{Client, StatusCode};
-use serde::Serialize;
-use thiserror::Error;
-use tokio::time::sleep;
-use tracing::warn;
+use reqwest::Client;
 
-#[derive(Debug, Error)]
-pub enum MonitorError {
-    #[error("config error: {0}")]
-    Config(#[from] ConfigError),
-    #[error("storage error: {0}")]
-    Storage(#[from] StorageError),
-    #[error("rpc error: {0}")]
-    Rpc(String),
-    #[error("telemetry error: {0}")]
-    Telemetry(#[from] TelemetryError),
-}
-
-impl From<reqwest::Error> for MonitorError {
-    fn from(value: reqwest::Error) -> Self {
-        Self::Rpc(value.to_string())
-    }
-}
-
-#[derive(Clone)]
-struct MonitorCtx {
-    config: BootstrapConfig,
-    storage: SeaOrmStorage,
-    client: Client,
-}
+use rpc::RpcTransferSource;
+use worker::{run_monitor, MonitorError};
 
 #[tokio::main]
-async fn main() -> Result<(), MonitorError> {
+async fn main() -> io::Result<()> {
+    if let Err(err) = bootstrap().await {
+        eprintln!("[monitor] bootstrap failed: {err}");
+        return Err(io::Error::other(err.to_string()));
+    }
+
+    Ok(())
+}
+
+async fn bootstrap() -> Result<(), MonitorError> {
     let config = BootstrapConfig::load_from_env()?;
     let telemetry_config = TelemetryConfig::from_env("MONITOR");
-    let _telemetry = init_telemetry(&telemetry_config)?;
+    init_telemetry(&telemetry_config)?;
     let storage = SeaOrmStorage::connect(config.database_url()).await?;
     let client = Client::builder().build()?;
-    run(MonitorCtx {
-        config,
-        storage,
-        client,
-    })
-    .await
-}
-
-async fn run(ctx: MonitorCtx) -> Result<(), MonitorError> {
-    let mut height = ctx
-        .storage
-        .last_processed_height()
-        .await?
-        .unwrap_or(ctx.config.monitor_start_height());
-
-    loop {
-        match fetch_transfers(&ctx, height).await {
-            Ok(transfers) => {
-                metrics::counter!("monitor_rpc_calls_total", 1, "result" => "ok");
-                let mut observed_height: Option<u64> = None;
-                metrics::histogram!("monitor_batch_entries", transfers.incoming.len() as f64);
-
-                for entry in &transfers.incoming {
-                    if let Some(h) = entry.height {
-                        let h = h as u64;
-                        observed_height = Some(observed_height.map_or(h, |current| current.max(h)));
-                    }
-                    process_entry(&ctx, entry).await?;
-                }
-
-                let mut next_height = height;
-                if let Some(max_height) = observed_height {
-                    next_height = max_height + 1;
-                } else if let Ok(chain_height) = fetch_wallet_height(&ctx).await {
-                    next_height = chain_height.max(next_height);
-                }
-                ctx.storage
-                    .upsert_last_processed_height(next_height)
-                    .await?;
-                metrics::gauge!("monitor_last_height", next_height as f64);
-                height = next_height;
-            }
-            Err(err) => {
-                metrics::counter!("monitor_rpc_calls_total", 1, "result" => "error");
-                warn!(?err, "rpc fetch failed");
-            }
-        }
-        sleep(Duration::from_secs(5)).await;
-    }
-}
-
-async fn process_entry(ctx: &MonitorCtx, entry: &TransferEntry) -> Result<bool, MonitorError> {
-    let (Some(pid), Some(height)) = (&entry.payment_id, entry.height) else {
-        return Ok(false);
-    };
-
-    if validate_pid(pid).is_err() {
-        warn!(pid, "skipping invalid pid");
-        metrics::counter!("monitor_payments_ingested_total", 1, "result" => "invalid_pid");
-        return Ok(false);
-    }
-
-    let detected_at = DateTime::from_timestamp(entry.timestamp as i64, 0).unwrap_or_else(Utc::now);
-
-    ctx.storage
-        .insert_payment(NewPayment {
-            pid: PaymentId::new(pid.clone()),
-            txid: entry.txid.clone(),
-            amount: entry.amount,
-            block_height: height,
-            detected_at,
-        })
-        .await?;
-    metrics::counter!("monitor_payments_ingested_total", 1, "result" => "persisted");
-
-    Ok(true)
-}
-
-async fn fetch_transfers(
-    ctx: &MonitorCtx,
-    start_height: u64,
-) -> Result<TransfersResponse, MonitorError> {
-    #[derive(Serialize)]
-    struct Params {
-        #[serde(rename = "in")]
-        in_transfers: bool,
-        out: bool,
-        pending: bool,
-        filter_by_height: bool,
-        min_height: u64,
-    }
-
-    let params = Params {
-        in_transfers: true,
-        out: false,
-        pending: false,
-        filter_by_height: true,
-        min_height: start_height,
-    };
-
-    let request = JsonRpcRequest {
-        jsonrpc: "2.0",
-        id: 1,
-        method: "get_transfers".into(),
-        params,
-    };
-
-    let resp = ctx
-        .client
-        .post(ctx.config.monero_rpc_url())
-        .json(&request)
-        .send()
-        .await?;
-    if resp.status() != StatusCode::OK {
-        return Err(MonitorError::Rpc(format!("rpc failure {}", resp.status())));
-    }
-
-    let parsed: JsonRpcResponse<TransfersResponse> = resp.json().await?;
-    Ok(parsed.result)
-}
-
-async fn fetch_wallet_height(ctx: &MonitorCtx) -> Result<u64, MonitorError> {
-    #[derive(Serialize)]
-    struct Params;
-
-    let request = JsonRpcRequest {
-        jsonrpc: "2.0",
-        id: 1,
-        method: "get_height".into(),
-        params: Params,
-    };
-
-    let resp = ctx
-        .client
-        .post(ctx.config.monero_rpc_url())
-        .json(&request)
-        .send()
-        .await?;
-    if resp.status() != StatusCode::OK {
-        return Err(MonitorError::Rpc(format!("rpc failure {}", resp.status())));
-    }
-
-    let parsed: JsonRpcResponse<HeightResponse> = resp.json().await?;
-    Ok(parsed.result.height)
+    let source = RpcTransferSource::new(client, config.monero_rpc_url());
+    run_monitor(config, storage, source).await
 }
