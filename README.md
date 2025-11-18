@@ -40,6 +40,13 @@ Downstream crates can import only the module they need (for example `anon_ticket
 - `worker.rs`: the long-running loop that pulls batches from a `TransferSource`, advances the stored height cursor, and exposes the shared `MonitorError` type.
 - `main.rs`: now limited to bootstrapping config/telemetry, wiring the SeaORM storage handle, and calling the worker with an RPC source.
 
+### Storage Crate Internals
+
+- `SeaOrmStorage` lives in `lib.rs` and exposes a `builder()` so future caching/sharding wrappers can intercept the underlying connection.
+- `migration.rs`: contains table definitions and shared helpers to initialize the schema.
+- `payment_store.rs`, `token_store.rs`, `monitor_state_store.rs`: implement each storage trait in isolation to keep the files focused.
+- `builder.rs`: thin builder that accepts a database URL and applies migrations before constructing the storage handle.
+
 ## Developer Commands
 
 Run the shared toolchain entry points from the workspace root:
@@ -240,3 +247,4 @@ Both binaries share the domain-level telemetry module:
   be scraped directly.
 - `AbuseTracker` logs and counts repeated invalid PID probes, making it easy to
   wire alert thresholds to Slack/PagerDuty.
+- `storage/`: `SeaOrmStorage` now re-exports submodules for migrations, per-trait implementations, and a `StorageBuilder` so future caching/sharding layers can wrap the database connection before it is shared.
