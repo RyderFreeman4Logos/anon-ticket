@@ -45,7 +45,6 @@ struct MonitorCtx {
 
 #[tokio::main]
 async fn main() -> Result<(), MonitorError> {
-    dotenvy::dotenv().ok();
     let config = BootstrapConfig::load_from_env()?;
     let telemetry_config = TelemetryConfig::from_env("MONITOR");
     let _telemetry = init_telemetry(&telemetry_config)?;
