@@ -165,6 +165,45 @@ The binary tracks the last processed height in the storage layer so it can
 resume after restarts. Configure the RPC credentials to point at the wallet you
 use for receiving PID-based transfers.
 
+### Watch-Only Wallet Deployment (Recommended)
+
+To keep spend keys inside a hardware wallet while still letting the monitor
+tail incoming transfers, run `monero-wallet-rpc` against a watch-only wallet and
+point `MONERO_RPC_URL` at that instance. The expected workflow for every
+deployment is:
+
+1. **Export address + view key from your hardware wallet.** Load the wallet in
+   `monero-wallet-cli` (e.g. `monero-wallet-cli --hw-device ledger`) and run
+   `address` plus `viewkey` to capture the primary address and private view key.
+   Never export the spend key; the hardware device keeps it offline.
+2. **Generate a watch-only wallet file.** Use the captured details to build a
+   read-only wallet: `monero-wallet-cli --generate-from-view-key \
+   --restore-height <height> watch-only --address <primary-address> \
+   --view-key <private-view-key> --password ""`. This wallet cannot sign
+   transactions but can decode every incoming output. Pick a restore height that
+   matches your network (mainnet default or stagenet/testnet if applicable) to
+   avoid a full rescan.
+3. **Start `monero-wallet-rpc` in watch-only mode.** Point it at a trusted
+   daemon (`--daemon-address <node>` or `--daemon-host 127.0.0.1 --daemon-port
+   18081`) and load the watch-only file: `monero-wallet-rpc --wallet-file
+   watch-only --password "" --daemon-address <daemon> --rpc-bind-port 18082 \
+   --confirm-external-bind`. Supply `--rpc-login user:pass` if you want HTTP
+   Basic Auth, then mirror those credentials via `MONERO_RPC_USER`/
+   `MONERO_RPC_PASS`; otherwise leave them unset and the monitor will send no
+   `Authorization` header.
+4. **Wire environment variables.** Set `MONERO_RPC_URL` (for example
+   `http://127.0.0.1:18082/json_rpc`) and `MONITOR_START_HEIGHT` to the block
+   height where you want ingestion to begin. All other `.env` entries stay the
+   same regardless of whether you run mainnet, stagenet, or testnet.
+
+Because the monitor only calls `get_transfers`/`get_height`, it never needs the
+spend key. Using watch-only wallets should therefore be treated as the default
+operational stance—doing so keeps hardware wallets offline, limits blast radius
+if the RPC endpoint leaks, and still lets you validate payments in near real
+time. The only extra maintenance cost is occasionally running `rescan_bc` on
+the watch-only wallet whenever you rotate restore heights or bootstrap from a
+new daemon.
+
 ## Observability
 
 Both binaries share the domain-level telemetry module:
