@@ -11,16 +11,18 @@ use actix_web::{
     web::{self, Data},
     App, HttpResponse, HttpServer, ResponseError,
 };
-use anon_ticket_domain::init_telemetry;
-use anon_ticket_domain::{
-    derive_service_token,
-    storage::{
-        ClaimOutcome, NewServiceToken, PaymentRecord, PaymentStatus, PaymentStore,
-        RevokeTokenRequest, ServiceToken, ServiceTokenRecord, TokenStore,
-    },
-    AbuseSignal, AbuseTracker, ApiConfig, ConfigError, InMemoryPidCache, PaymentId, PidCache,
-    PidFormatError, StorageError, TelemetryConfig, TelemetryError, TelemetryGuard,
+use anon_ticket_domain::config::{ApiConfig, ConfigError};
+use anon_ticket_domain::model::{
+    derive_service_token, ClaimOutcome, NewServiceToken, PaymentId, PaymentRecord, PaymentStatus,
+    PidFormatError, RevokeTokenRequest, ServiceToken, ServiceTokenRecord,
 };
+use anon_ticket_domain::services::{
+    cache::{InMemoryPidCache, PidCache},
+    telemetry::{
+        init_telemetry, AbuseSignal, AbuseTracker, TelemetryConfig, TelemetryError, TelemetryGuard,
+    },
+};
+use anon_ticket_domain::storage::{PaymentStore, StorageError, TokenStore};
 use anon_ticket_storage::SeaOrmStorage;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -441,7 +443,7 @@ async fn run() -> Result<(), BootstrapError> {
 mod tests {
     use super::*;
     use actix_web::{body::to_bytes, test, App};
-    use anon_ticket_domain::storage::{NewPayment, NewServiceToken};
+    use anon_ticket_domain::model::{NewPayment, NewServiceToken};
     #[cfg(unix)]
     use std::fs;
     use std::time::Duration;

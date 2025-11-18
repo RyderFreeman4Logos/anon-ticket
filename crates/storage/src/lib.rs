@@ -6,10 +6,12 @@ mod entity;
 
 use std::sync::Arc;
 
+use anon_ticket_domain::model::{
+    ClaimOutcome, NewPayment, NewServiceToken, PaymentId, PaymentRecord, PaymentStatus,
+    RevokeTokenRequest, ServiceToken, ServiceTokenRecord,
+};
 use anon_ticket_domain::storage::{
-    ClaimOutcome, MonitorStateStore, NewPayment, NewServiceToken, PaymentId, PaymentRecord,
-    PaymentStatus, PaymentStore, RevokeTokenRequest, ServiceToken, ServiceTokenRecord,
-    StorageError, StorageResult, TokenStore,
+    MonitorStateStore, PaymentStore, StorageError, StorageResult, TokenStore,
 };
 use chrono::Utc;
 use entity::monitor_state;
@@ -355,7 +357,7 @@ fn token_to_record(model: service_tokens::Model) -> ServiceTokenRecord {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use anon_ticket_domain::storage::{NewPayment, NewServiceToken, RevokeTokenRequest};
+    use anon_ticket_domain::model::{NewPayment, NewServiceToken, RevokeTokenRequest};
     use chrono::Utc;
 
     fn test_pid() -> PaymentId {

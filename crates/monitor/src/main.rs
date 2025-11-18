@@ -4,11 +4,10 @@ mod client;
 
 use std::time::Duration;
 
-use anon_ticket_domain::{
-    init_telemetry,
-    storage::{MonitorStateStore, NewPayment, PaymentId, PaymentStore},
-    validate_pid, BootstrapConfig, ConfigError, TelemetryConfig, TelemetryError,
-};
+use anon_ticket_domain::config::{BootstrapConfig, ConfigError};
+use anon_ticket_domain::model::{validate_pid, NewPayment, PaymentId};
+use anon_ticket_domain::services::telemetry::{init_telemetry, TelemetryConfig, TelemetryError};
+use anon_ticket_domain::storage::{MonitorStateStore, PaymentStore, StorageError};
 use anon_ticket_storage::SeaOrmStorage;
 use chrono::{DateTime, Utc};
 use client::{HeightResponse, JsonRpcRequest, JsonRpcResponse, TransferEntry, TransfersResponse};
@@ -23,7 +22,7 @@ pub enum MonitorError {
     #[error("config error: {0}")]
     Config(#[from] ConfigError),
     #[error("storage error: {0}")]
-    Storage(#[from] anon_ticket_domain::storage::StorageError),
+    Storage(#[from] StorageError),
     #[error("rpc error: {0}")]
     Rpc(String),
     #[error("telemetry error: {0}")]

@@ -5,7 +5,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::PaymentId;
+use crate::model::PaymentId;
 
 /// The cached knowledge about a PID.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

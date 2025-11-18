@@ -13,7 +13,7 @@ use thiserror::Error;
 use tracing::warn;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
-use crate::hydrate_env_file;
+use crate::config::hydrate_env_file;
 
 static SUBSCRIBER_INSTALLED: OnceCell<()> = OnceCell::new();
 static METRICS_HANDLE: OnceCell<Arc<PrometheusHandle>> = OnceCell::new();

@@ -15,6 +15,17 @@ that toolchain plus `clippy`/`rustfmt` is sufficient to reproduce CI locally.
 | `crates/api`     | `anon_ticket_api`     | bin  | Actix-based redemption and introspection HTTP surface. |
 | `crates/monitor` | `anon_ticket_monitor` | bin  | Monero wallet monitor that imports qualifying transfers. |
 
+### Domain Crate Internals
+
+`anon_ticket_domain` is intentionally split into focused modules:
+
+- `config`: environment hydration plus `ApiConfig`/`BootstrapConfig` loading contracts.
+- `model`: strongly typed payment/service token IDs, record structs, and hashing helpers.
+- `services::cache` / `services::telemetry`: PID cache abstractions, telemetry wiring, and abuse tracking utilities shared by binaries.
+- `storage::traits`: async `PaymentStore`/`TokenStore`/`MonitorStateStore` definitions and shared error types.
+
+Downstream crates can import only the module they need (for example `anon_ticket_domain::model::PaymentId`) while still benefiting from the crate-level re-exports for compatibility.
+
 ## Developer Commands
 
 Run the shared toolchain entry points from the workspace root:
