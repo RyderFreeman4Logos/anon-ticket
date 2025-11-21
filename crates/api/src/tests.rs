@@ -20,7 +20,7 @@ use crate::handlers::{
 use crate::state::AppState;
 
 fn test_pid() -> PaymentId {
-    PaymentId::new("0123456789abcdef0123456789abcdef")
+    PaymentId::new("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
 }
 
 async fn storage() -> SeaOrmStorage {

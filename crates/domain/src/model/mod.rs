@@ -30,7 +30,7 @@ pub fn derive_service_token(pid: &PaymentId, txid: &str) -> ServiceToken {
 }
 
 /// Required length (in hex characters) for externally supplied payment IDs.
-pub const PID_LENGTH: usize = 32;
+pub const PID_LENGTH: usize = 64;
 
 /// Errors emitted when user-supplied payment IDs fail validation.
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
@@ -41,7 +41,7 @@ pub enum PidFormatError {
     NonHex,
 }
 
-/// Validates that the supplied PID matches the 32 hex-character contract.
+/// Validates that the supplied PID matches the 64 hex-character contract.
 pub fn validate_pid(pid: &str) -> Result<(), PidFormatError> {
     if pid.len() != PID_LENGTH {
         return Err(PidFormatError::WrongLength);
@@ -166,6 +166,7 @@ pub struct RevokeTokenRequest {
 #[cfg(test)]
 mod tests {
     use super::*;
+    const VALID_PID: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
     #[test]
     fn readiness_message_is_stable() {
@@ -187,30 +188,31 @@ mod tests {
     fn pid_validation_rejects_invalid_inputs() {
         assert_eq!(validate_pid("deadbeef"), Err(PidFormatError::WrongLength));
         assert_eq!(
-            validate_pid("zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"),
+            validate_pid(&"z".repeat(PID_LENGTH)),
             Err(PidFormatError::NonHex)
         );
-        assert!(validate_pid("0123456789abcdef0123456789abcdef").is_ok());
+        assert!(validate_pid(VALID_PID).is_ok());
     }
 
     #[test]
     fn payment_id_parse_checks_format() {
-        assert!(PaymentId::parse("0123456789abcdef0123456789abcdef").is_ok());
+        assert!(PaymentId::parse(VALID_PID).is_ok());
         assert!(PaymentId::parse("not-valid").is_err());
     }
 
     #[test]
     fn payment_id_canonicalizes_case() {
-        let pid = PaymentId::parse("ABCDEFABCDEFABCDEFABCDEFABCDEFAB").unwrap();
-        assert_eq!(pid.as_str(), "abcdefabcdefabcdefabcdefabcdefab");
+        let uppercase = "ABCDEFAB".repeat(8);
+        let pid = PaymentId::parse(&uppercase).unwrap();
+        assert_eq!(pid.as_str(), "abcdefab".repeat(8));
 
-        let raw = PaymentId::new("FEDCBA9876543210FEDCBA9876543210");
-        assert_eq!(raw.as_str(), "fedcba9876543210fedcba9876543210");
+        let raw = PaymentId::new("FEDCBA9876543210".repeat(4));
+        assert_eq!(raw.as_str(), "fedcba9876543210".repeat(4));
     }
 
     #[test]
     fn service_token_derivation_is_deterministic() {
-        let pid = PaymentId::parse("0123456789abcdef0123456789abcdef").unwrap();
+        let pid = PaymentId::parse(VALID_PID).unwrap();
         let a = derive_service_token(&pid, "tx1");
         let b = derive_service_token(&pid, "tx1");
         assert_eq!(a.as_str(), b.as_str());
