@@ -7,7 +7,7 @@ use actix_web::{middleware::Logger, web, App, HttpServer};
 use anon_ticket_domain::config::{ApiConfig, ConfigError};
 use anon_ticket_domain::services::{
     cache::InMemoryPidCache,
-    telemetry::{init_telemetry, AbuseTracker, TelemetryConfig, TelemetryError},
+    telemetry::{init_telemetry, TelemetryConfig, TelemetryError},
 };
 use anon_ticket_storage::SeaOrmStorage;
 use thiserror::Error;
@@ -23,8 +23,7 @@ pub async fn run() -> Result<(), BootstrapError> {
     let telemetry = init_telemetry(&telemetry_config)?;
     let storage = SeaOrmStorage::connect(config.database_url()).await?;
     let cache = Arc::new(InMemoryPidCache::default());
-    let abuse_tracker = AbuseTracker::new(telemetry.abuse_threshold());
-    let state = AppState::new(storage, cache, telemetry.clone(), abuse_tracker);
+    let state = AppState::new(storage, cache, telemetry.clone());
 
     let include_metrics_on_public = !config.has_internal_listener();
     let public_state = state.clone();

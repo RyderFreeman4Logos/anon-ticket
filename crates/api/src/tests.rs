@@ -6,7 +6,7 @@ use anon_ticket_domain::model::{
 };
 use anon_ticket_domain::services::{
     cache::InMemoryPidCache,
-    telemetry::{init_telemetry, AbuseTracker, TelemetryConfig, TelemetryGuard},
+    telemetry::{init_telemetry, TelemetryConfig, TelemetryGuard},
 };
 use anon_ticket_domain::{PaymentStore, PidCache, TokenStore};
 use anon_ticket_storage::SeaOrmStorage;
@@ -36,12 +36,7 @@ fn telemetry() -> TelemetryGuard {
 
 fn build_state(storage: SeaOrmStorage, cache: Arc<InMemoryPidCache>) -> AppState {
     let telemetry = telemetry();
-    AppState::new(
-        storage,
-        cache,
-        telemetry.clone(),
-        AbuseTracker::new(telemetry.abuse_threshold()),
-    )
+    AppState::new(storage, cache, telemetry.clone())
 }
 
 fn with_cache(storage: SeaOrmStorage) -> AppState {

@@ -168,9 +168,9 @@ filter.
 `anon_ticket_api` exposes Prometheus-compatible metrics at `GET /metrics`,
 backed by the shared telemetry module. Set `API_METRICS_ADDRESS` if you prefer
 the exporter to run on a dedicated port. The API increments counters for each
-redeem/token request outcome and logs whenever repeated PID probes exceed the
-configurable `API_ABUSE_THRESHOLD` (default: 5). These signals can be wired into
-dashboards or alerting rules to flag bot abuse early.
+redeem/token request outcome and tags cache hints (`absent_blocked` / `absent_probe`)
+so you can alert on spikes in invalid PID traffic even without a dedicated abuse
+tracker.
 
 ## Monitor Service
 
@@ -236,15 +236,12 @@ new daemon.
 
 Both binaries share the domain-level telemetry module:
 
-- `TelemetryConfig::from_env(<prefix>)` picks up log filters, optional metrics
-  listeners, and abuse escalation thresholds without forcing additional env
-  vars.
+- `TelemetryConfig::from_env(<prefix>)` picks up log filters and optional
+  metrics listeners without forcing additional env vars.
 - `init_telemetry` installs a global `tracing-subscriber` configured via the
   supplied filter (default `info`).
 - Prometheus metrics are collected via `metrics-exporter-prometheus`; if a
   `<PREFIX>_METRICS_ADDRESS` (e.g. `API_METRICS_ADDRESS=0.0.0.0:9898`) exists, a
   listener is spawned automatically, otherwise the API's `/metrics` endpoint can
   be scraped directly.
-- `AbuseTracker` logs and counts repeated invalid PID probes, making it easy to
-  wire alert thresholds to Slack/PagerDuty.
 - `storage/`: `SeaOrmStorage` now re-exports submodules for migrations, per-trait implementations, and a `StorageBuilder` so future caching/sharding layers can wrap the database connection before it is shared.

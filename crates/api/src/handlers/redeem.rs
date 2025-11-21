@@ -5,7 +5,6 @@ use anon_ticket_domain::model::{
     derive_service_token, ClaimOutcome, NewServiceToken, PaymentId, PaymentRecord, PaymentStatus,
     ServiceTokenRecord,
 };
-use anon_ticket_domain::services::telemetry::AbuseSignal;
 use anon_ticket_domain::storage::{PaymentStore, TokenStore};
 use anon_ticket_domain::PidCache;
 use chrono::Utc;
@@ -36,7 +35,6 @@ pub async fn redeem_handler(
 ) -> Result<HttpResponse, ApiError> {
     let pid = PaymentId::parse(&payload.pid).inspect_err(|_| {
         counter!("api_redeem_requests_total", 1, "status" => "invalid_pid");
-        state.abuse_tracker().record(&payload.pid);
     })?;
 
     if !state.cache().might_contain(&pid) {
@@ -47,10 +45,6 @@ pub async fn redeem_handler(
         if should_short_circuit {
             counter!("api_redeem_cache_hints_total", 1, "hint" => "absent_blocked");
             counter!("api_redeem_requests_total", 1, "status" => "cache_absent");
-            if let AbuseSignal::Escalated { attempts } = state.abuse_tracker().record(pid.as_str())
-            {
-                tracing::warn!(pid = pid.as_str(), attempts, "pid probing escalated");
-            }
             return Err(ApiError::NotFound);
         }
 
@@ -81,7 +75,6 @@ async fn handle_success(
         .await?;
     counter!("api_redeem_requests_total", 1, "status" => "success");
     state.cache().mark_present(&pid);
-    state.abuse_tracker().reset(pid.as_str());
 
     Ok(HttpResponse::Ok().json(build_redeem_response("success", token_record)))
 }
@@ -92,7 +85,6 @@ async fn handle_absent(state: &AppState, pid: PaymentId) -> Result<HttpResponse,
         Some(record) if record.status == PaymentStatus::Claimed => {
             state.cache().mark_present(&pid);
             let token = ensure_token_record(state, &pid, &record).await?;
-            state.abuse_tracker().reset(pid.as_str());
             counter!("api_redeem_requests_total", 1, "status" => "already_claimed");
             Ok(HttpResponse::Ok().json(build_redeem_response("already_claimed", token)))
         }
@@ -104,10 +96,6 @@ async fn handle_absent(state: &AppState, pid: PaymentId) -> Result<HttpResponse,
         None => {
             state.cache().mark_absent(&pid);
             counter!("api_redeem_requests_total", 1, "status" => "not_found");
-            if let AbuseSignal::Escalated { attempts } = state.abuse_tracker().record(pid.as_str())
-            {
-                tracing::warn!(pid = pid.as_str(), attempts, "pid probing escalated");
-            }
             Err(ApiError::NotFound)
         }
     }
