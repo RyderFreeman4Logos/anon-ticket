@@ -18,7 +18,7 @@ use crate::SeaOrmStorage;
 impl PaymentStore for SeaOrmStorage {
     async fn insert_payment(&self, payment: NewPayment) -> StorageResult<()> {
         let model = payments::ActiveModel {
-            pid: Set(payment.pid.into_inner()),
+            pid: Set(payment.pid.into_bytes().to_vec()),
             txid: Set(payment.txid),
             amount: Set(payment.amount),
             block_height: Set(payment.block_height),
@@ -49,7 +49,7 @@ impl PaymentStore for SeaOrmStorage {
             PaymentStatusDb::Claimed.to_value(),
         );
         query.value(payments::Column::ClaimedAt, now);
-        query.and_where(payments::Column::Pid.eq(pid.as_str()));
+        query.and_where(payments::Column::Pid.eq(pid.as_bytes().to_vec()));
         query.and_where(payments::Column::Status.eq(PaymentStatusDb::Unclaimed));
         query.returning_all();
 
@@ -86,7 +86,7 @@ impl PaymentStore for SeaOrmStorage {
 
     async fn find_payment(&self, pid: &PaymentId) -> StorageResult<Option<PaymentRecord>> {
         let maybe = payments::Entity::find()
-            .filter(payments::Column::Pid.eq(pid.as_str()))
+            .filter(payments::Column::Pid.eq(pid.as_bytes().to_vec()))
             .one(self.connection())
             .await
             .map_err(StorageError::from_source)?;

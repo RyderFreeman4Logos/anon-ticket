@@ -6,7 +6,7 @@ pub mod payments {
     #[sea_orm(table_name = "payments")]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
-        pub pid: String,
+        pub pid: Vec<u8>,
         pub txid: String,
         pub amount: i64,
         pub block_height: i64,
@@ -39,8 +39,8 @@ pub mod service_tokens {
     #[sea_orm(table_name = "service_tokens")]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]
-        pub token: String,
-        pub pid: String,
+        pub token: Vec<u8>,
+        pub pid: Vec<u8>,
         pub amount: i64,
         #[sea_orm(default_expr = "Expr::current_timestamp()")]
         pub issued_at: DateTimeUtc,

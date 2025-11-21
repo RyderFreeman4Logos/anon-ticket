@@ -13,8 +13,8 @@ use crate::SeaOrmStorage;
 impl TokenStore for SeaOrmStorage {
     async fn insert_token(&self, token: NewServiceToken) -> StorageResult<ServiceTokenRecord> {
         let model = service_tokens::ActiveModel {
-            token: Set(token.token.into_inner()),
-            pid: Set(token.pid.into_inner()),
+            token: Set(token.token.into_bytes().to_vec()),
+            pid: Set(token.pid.into_bytes().to_vec()),
             amount: Set(token.amount),
             issued_at: Set(token.issued_at),
             abuse_score: Set(token.abuse_score),
@@ -29,7 +29,7 @@ impl TokenStore for SeaOrmStorage {
 
     async fn find_token(&self, token: &ServiceToken) -> StorageResult<Option<ServiceTokenRecord>> {
         let maybe = service_tokens::Entity::find()
-            .filter(service_tokens::Column::Token.eq(token.as_str()))
+            .filter(service_tokens::Column::Token.eq(token.as_bytes().to_vec()))
             .one(self.connection())
             .await
             .map_err(StorageError::from_source)?;
@@ -41,7 +41,7 @@ impl TokenStore for SeaOrmStorage {
         request: RevokeTokenRequest,
     ) -> StorageResult<Option<ServiceTokenRecord>> {
         let maybe = service_tokens::Entity::find()
-            .filter(service_tokens::Column::Token.eq(request.token.as_str()))
+            .filter(service_tokens::Column::Token.eq(request.token.as_bytes().to_vec()))
             .one(self.connection())
             .await
             .map_err(StorageError::from_source)?;
@@ -70,9 +70,11 @@ impl TokenStore for SeaOrmStorage {
 fn token_to_record(model: service_tokens::Model) -> StorageResult<ServiceTokenRecord> {
     let pid =
         PaymentId::try_from(model.pid).map_err(|err| StorageError::Database(err.to_string()))?;
+    let token = ServiceToken::try_from(model.token)
+        .map_err(|err| StorageError::Database(err.to_string()))?;
 
     Ok(ServiceTokenRecord {
-        token: ServiceToken::new(model.token),
+        token,
         pid,
         amount: model.amount,
         issued_at: model.issued_at,

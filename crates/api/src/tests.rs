@@ -49,7 +49,8 @@ fn with_cache_ttl(storage: SeaOrmStorage, ttl: Duration) -> AppState {
 
 async fn insert_token(storage: &SeaOrmStorage) -> ServiceToken {
     let token =
-        ServiceToken::new("deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef");
+        ServiceToken::parse("deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
+            .unwrap();
     storage
         .insert_token(NewServiceToken {
             token: token.clone(),
@@ -308,7 +309,7 @@ async fn token_status_returns_active() {
     )
     .await;
     let req = test::TestRequest::get()
-        .uri(&format!("/api/v1/token/{}", token.as_str()))
+        .uri(&format!("/api/v1/token/{}", token.to_hex()))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
@@ -330,7 +331,7 @@ async fn revoke_token_marks_revoked() {
     .await;
 
     let req = test::TestRequest::post()
-        .uri(&format!("/api/v1/token/{}/revoke", token.as_str()))
+        .uri(&format!("/api/v1/token/{}/revoke", token.to_hex()))
         .set_json(&RevokeRequest {
             reason: Some("abuse".into()),
             abuse_score: Some(5),
@@ -340,7 +341,7 @@ async fn revoke_token_marks_revoked() {
     assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
 
     let req = test::TestRequest::get()
-        .uri(&format!("/api/v1/token/{}", token.as_str()))
+        .uri(&format!("/api/v1/token/{}", token.to_hex()))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), actix_web::http::StatusCode::OK);

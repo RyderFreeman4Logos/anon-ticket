@@ -28,7 +28,7 @@ pub async fn token_status_handler(
     state: web::Data<AppState>,
     path: web::Path<String>,
 ) -> Result<HttpResponse, ApiError> {
-    let token = ServiceToken::new(path.into_inner());
+    let token = ServiceToken::parse(&path.into_inner())?;
     let record = match state.storage().find_token(&token).await? {
         Some(record) => record,
         None => {
@@ -56,7 +56,7 @@ pub async fn revoke_token_handler(
     path: web::Path<String>,
     payload: web::Json<RevokeRequest>,
 ) -> Result<HttpResponse, ApiError> {
-    let token = ServiceToken::new(path.into_inner());
+    let token = ServiceToken::parse(&path.into_inner())?;
     let existing = match state.storage().find_token(&token).await? {
         Some(record) => record,
         None => {

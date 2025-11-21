@@ -30,28 +30,27 @@ pub trait PidCache: Send + Sync {
 
 #[derive(Debug)]
 pub struct InMemoryPidCache {
-    positives: Cache<String, ()>,
-    negatives: Cache<String, Instant>,
+    positives: Cache<[u8; 32], ()>,
+    negatives: Cache<[u8; 32], Instant>,
 }
 
 impl PidCache for InMemoryPidCache {
     fn might_contain(&self, pid: &PaymentId) -> bool {
-        !self.negatives.contains_key(pid.as_str())
+        !self.negatives.contains_key(pid.as_bytes())
     }
 
     fn mark_present(&self, pid: &PaymentId) {
-        self.positives.insert(pid.as_str().to_string(), ());
-        self.negatives.invalidate(pid.as_str());
+        self.positives.insert(*pid.as_bytes(), ());
+        self.negatives.invalidate(pid.as_bytes());
     }
 
     fn mark_absent(&self, pid: &PaymentId) {
-        self.negatives
-            .insert(pid.as_str().to_string(), Instant::now());
+        self.negatives.insert(*pid.as_bytes(), Instant::now());
     }
 
     fn negative_entry_age(&self, pid: &PaymentId) -> Option<Duration> {
         self.negatives
-            .get(pid.as_str())
+            .get(pid.as_bytes())
             .map(|inserted| Instant::now().saturating_duration_since(inserted))
     }
 }
@@ -79,7 +78,7 @@ impl InMemoryPidCache {
     }
 
     pub fn known_present(&self, pid: &PaymentId) -> bool {
-        self.positives.contains_key(pid.as_str())
+        self.positives.contains_key(pid.as_bytes())
     }
 }
 

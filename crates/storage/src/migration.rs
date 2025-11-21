@@ -12,7 +12,7 @@ pub async fn run_migrations(db: &DatabaseConnection) -> StorageResult<()> {
         .table(payments::Entity)
         .col(
             ColumnDef::new(payments::Column::Pid)
-                .string_len(64)
+                .binary_len(32)
                 .not_null()
                 .primary_key(),
         )
@@ -55,13 +55,13 @@ pub async fn run_migrations(db: &DatabaseConnection) -> StorageResult<()> {
         .table(service_tokens::Entity)
         .col(
             ColumnDef::new(service_tokens::Column::Token)
-                .string_len(64)
+                .binary_len(32)
                 .not_null()
                 .primary_key(),
         )
         .col(
             ColumnDef::new(service_tokens::Column::Pid)
-                .string_len(64)
+                .binary_len(32)
                 .not_null(),
         )
         .col(

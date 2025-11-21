@@ -2,7 +2,7 @@
 
 use chrono::{DateTime, Utc};
 use getrandom::getrandom;
-use hex::encode as hex_encode;
+use hex::{decode as hex_decode, encode as hex_encode, FromHexError};
 use sha3::{Digest, Sha3_256};
 use thiserror::Error;
 
@@ -26,11 +26,11 @@ pub fn derive_pid_fingerprint(pid: &str) -> String {
 /// their lengths diverge in future formats.
 pub fn derive_service_token(pid: &PaymentId, txid: &str) -> ServiceToken {
     let mut hasher = Sha3_256::new();
-    hasher.update(pid.as_str().as_bytes());
+    hasher.update(pid.to_hex().as_bytes());
     hasher.update(b"|");
     hasher.update(txid.as_bytes());
     let digest = hasher.finalize();
-    ServiceToken::new(hex_encode(digest))
+    ServiceToken::from_bytes(digest.into())
 }
 
 /// Required length (in hex characters) for externally supplied payment IDs.
@@ -58,14 +58,23 @@ pub fn validate_pid(pid: &str) -> Result<(), PidFormatError> {
     Ok(())
 }
 
+fn decode_pid_hex(pid: &str) -> Result<[u8; 32], PidFormatError> {
+    let bytes = hex_decode(pid).map_err(map_hex_error_to_pid)?;
+    if bytes.len() != 32 {
+        return Err(PidFormatError::WrongLength);
+    }
+    let mut array = [0u8; 32];
+    array.copy_from_slice(&bytes);
+    Ok(array)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct PaymentId(String);
+pub struct PaymentId([u8; 32]);
 
 impl PaymentId {
-    pub(crate) fn new(value: impl Into<String>) -> Self {
-        let mut owned = value.into();
-        owned.make_ascii_lowercase();
-        Self(owned)
+    pub(crate) fn new(hex: impl AsRef<str>) -> Self {
+        let bytes = decode_pid_hex(hex.as_ref()).expect("caller validated pid hex");
+        Self(bytes)
     }
 
     pub fn parse(pid: &str) -> Result<Self, PidFormatError> {
@@ -76,14 +85,22 @@ impl PaymentId {
     pub fn generate() -> Result<Self, getrandom::Error> {
         let mut bytes = [0u8; 32];
         getrandom(&mut bytes)?;
-        Ok(Self::new(hex_encode(bytes)))
+        Ok(Self(bytes))
     }
 
-    pub fn as_str(&self) -> &str {
+    pub fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
 
+    pub fn to_hex(&self) -> String {
+        hex_encode(self.0)
+    }
+
     pub fn into_inner(self) -> String {
+        self.to_hex()
+    }
+
+    pub fn into_bytes(self) -> [u8; 32] {
         self.0
     }
 }
@@ -92,25 +109,120 @@ impl TryFrom<String> for PaymentId {
     type Error = PidFormatError;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        validate_pid(&value)?;
-        Ok(Self::new(value))
+        Self::parse(&value)
     }
 }
 
+impl TryFrom<Vec<u8>> for PaymentId {
+    type Error = PidFormatError;
+
+    fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
+        if value.len() != 32 {
+            return Err(PidFormatError::WrongLength);
+        }
+        let mut bytes = [0u8; 32];
+        bytes.copy_from_slice(&value);
+        Ok(Self(bytes))
+    }
+}
+
+impl std::fmt::Display for PaymentId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.to_hex())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Error)]
+pub enum TokenFormatError {
+    #[error("service token must be exactly 64 hex characters")]
+    WrongLength,
+    #[error("service token contains non-hex characters")]
+    NonHex,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct ServiceToken(String);
+pub struct ServiceToken([u8; 32]);
 
 impl ServiceToken {
-    pub fn new(value: impl Into<String>) -> Self {
-        Self(value.into())
+    pub fn parse(hex: &str) -> Result<Self, TokenFormatError> {
+        validate_hex_64(hex)?;
+        let bytes = decode_token_hex(hex)?;
+        Ok(Self(bytes))
     }
 
-    pub fn as_str(&self) -> &str {
+    pub fn from_bytes(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+
+    pub fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
 
+    pub fn to_hex(&self) -> String {
+        hex_encode(self.0)
+    }
+
     pub fn into_inner(self) -> String {
+        self.to_hex()
+    }
+
+    pub fn into_bytes(self) -> [u8; 32] {
         self.0
+    }
+}
+
+impl std::fmt::Display for ServiceToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.to_hex())
+    }
+}
+
+impl TryFrom<Vec<u8>> for ServiceToken {
+    type Error = TokenFormatError;
+
+    fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
+        if value.len() != 32 {
+            return Err(TokenFormatError::WrongLength);
+        }
+        let mut bytes = [0u8; 32];
+        bytes.copy_from_slice(&value);
+        Ok(Self(bytes))
+    }
+}
+
+fn validate_hex_64(input: &str) -> Result<(), TokenFormatError> {
+    if input.len() != 64 {
+        return Err(TokenFormatError::WrongLength);
+    }
+    if !input.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(TokenFormatError::NonHex);
+    }
+    Ok(())
+}
+
+fn decode_token_hex(token: &str) -> Result<[u8; 32], TokenFormatError> {
+    let bytes = hex_decode(token).map_err(map_hex_error_to_token)?;
+    if bytes.len() != 32 {
+        return Err(TokenFormatError::WrongLength);
+    }
+    let mut array = [0u8; 32];
+    array.copy_from_slice(&bytes);
+    Ok(array)
+}
+
+fn map_hex_error_to_pid(err: FromHexError) -> PidFormatError {
+    match err {
+        FromHexError::InvalidHexCharacter { .. } => PidFormatError::NonHex,
+        FromHexError::InvalidStringLength => PidFormatError::WrongLength,
+        _ => PidFormatError::NonHex,
+    }
+}
+
+fn map_hex_error_to_token(err: FromHexError) -> TokenFormatError {
+    match err {
+        FromHexError::InvalidHexCharacter { .. } => TokenFormatError::NonHex,
+        FromHexError::InvalidStringLength => TokenFormatError::WrongLength,
+        _ => TokenFormatError::NonHex,
     }
 }
 
@@ -217,10 +329,10 @@ mod tests {
     fn payment_id_canonicalizes_case() {
         let uppercase = "ABCDEFAB".repeat(8);
         let pid = PaymentId::parse(&uppercase).unwrap();
-        assert_eq!(pid.as_str(), "abcdefab".repeat(8));
+        assert_eq!(pid.to_hex(), "abcdefab".repeat(8));
 
         let raw = PaymentId::new("FEDCBA9876543210".repeat(4));
-        assert_eq!(raw.as_str(), "fedcba9876543210".repeat(4));
+        assert_eq!(raw.to_hex(), "fedcba9876543210".repeat(4));
     }
 
     #[test]
@@ -228,7 +340,7 @@ mod tests {
         let pid = PaymentId::parse(VALID_PID).unwrap();
         let a = derive_service_token(&pid, "tx1");
         let b = derive_service_token(&pid, "tx1");
-        assert_eq!(a.as_str(), b.as_str());
+        assert_eq!(a.to_hex(), b.to_hex());
     }
 
     #[test]
@@ -236,7 +348,7 @@ mod tests {
         let pid = PaymentId::parse(VALID_PID).unwrap();
         let token = derive_service_token(&pid, "tx1");
         assert_eq!(
-            token.as_str(),
+            token.to_hex(),
             "6f70c79989f0d39772b9f81cfed1463a80f59e5b085dc1907f5e1a7f12482d86"
         );
     }
@@ -244,7 +356,8 @@ mod tests {
     #[test]
     fn generate_produces_valid_pid() {
         let pid = PaymentId::generate().expect("entropy available");
-        assert_eq!(pid.as_str().len(), PID_LENGTH);
-        assert!(validate_pid(pid.as_str()).is_ok());
+        let hex = pid.to_hex();
+        assert_eq!(hex.len(), PID_LENGTH);
+        assert!(validate_pid(&hex).is_ok());
     }
 }
