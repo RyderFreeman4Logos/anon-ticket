@@ -19,3 +19,4 @@ tracing-subscriber.workspace = true
 metrics.workspace = true
 metrics-exporter-prometheus.workspace = true
 once_cell.workspace = true
+moka.workspace = true
