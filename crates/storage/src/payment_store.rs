@@ -3,8 +3,12 @@ use anon_ticket_domain::model::{
 };
 use anon_ticket_domain::storage::{PaymentStore, StorageResult};
 use chrono::Utc;
+use sea_orm::sea_query::{PostgresQueryBuilder, Query, SqliteQueryBuilder};
 use sea_orm::ActiveEnum;
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, Set, TransactionTrait};
+use sea_orm::{
+    ColumnTrait, ConnectionTrait, DatabaseBackend, EntityTrait, FromQueryResult, QueryFilter, Set,
+    Statement,
+};
 
 use crate::entity::payments::{self, PaymentStatusDb};
 use crate::errors::StorageError;
@@ -35,40 +39,38 @@ impl PaymentStore for SeaOrmStorage {
     }
 
     async fn claim_payment(&self, pid: &PaymentId) -> StorageResult<Option<ClaimOutcome>> {
-        let txn = self
-            .connection()
-            .begin()
-            .await
-            .map_err(StorageError::from_source)?;
         let now = Utc::now();
-        let update_result = payments::Entity::update_many()
-            .col_expr(
-                payments::Column::Status,
-                sea_orm::sea_query::Expr::value(PaymentStatusDb::Claimed.to_value()),
-            )
-            .col_expr(
-                payments::Column::ClaimedAt,
-                sea_orm::sea_query::Expr::value(now),
-            )
-            .filter(payments::Column::Pid.eq(pid.as_str()))
-            .filter(payments::Column::Status.eq(PaymentStatusDb::Unclaimed))
-            .exec(&txn)
+        let backend = self.connection().get_database_backend();
+
+        let mut query = Query::update();
+        query.table(payments::Entity);
+        query.value(
+            payments::Column::Status,
+            PaymentStatusDb::Claimed.to_value(),
+        );
+        query.value(payments::Column::ClaimedAt, now);
+        query.and_where(payments::Column::Pid.eq(pid.as_str()));
+        query.and_where(payments::Column::Status.eq(PaymentStatusDb::Unclaimed));
+        query.returning_all();
+
+        let (sql, values) = match backend {
+            DatabaseBackend::Sqlite => query.build(SqliteQueryBuilder),
+            DatabaseBackend::Postgres => query.build(PostgresQueryBuilder),
+            DatabaseBackend::MySql => unreachable!("mysql backend is not supported"),
+        };
+        let stmt = Statement::from_sql_and_values(backend, sql, values);
+        let maybe_row = self
+            .connection()
+            .query_one(stmt)
             .await
             .map_err(StorageError::from_source)?;
 
-        if update_result.rows_affected == 0 {
-            txn.commit().await.map_err(StorageError::from_source)?;
-            return Ok(None);
-        }
-
-        let updated = payments::Entity::find()
-            .filter(payments::Column::Pid.eq(pid.as_str()))
-            .one(&txn)
-            .await
-            .map_err(StorageError::from_source)?
-            .ok_or_else(|| StorageError::Database("claimed payment missing".to_string()))?;
-
-        txn.commit().await.map_err(StorageError::from_source)?;
+        let updated = match maybe_row {
+            Some(row) => {
+                payments::Model::from_query_result(&row, "").map_err(StorageError::from_source)?
+            }
+            None => return Ok(None),
+        };
 
         let pid = PaymentId::try_from(updated.pid)
             .map_err(|err| StorageError::Database(err.to_string()))?;
@@ -78,7 +80,7 @@ impl PaymentStore for SeaOrmStorage {
             txid: updated.txid,
             amount: updated.amount,
             block_height: updated.block_height,
-            claimed_at: updated.claimed_at.expect("claimed timestamp set"),
+            claimed_at: updated.claimed_at.unwrap_or(now),
         }))
     }
 

@@ -16,7 +16,7 @@ use anon_ticket_domain::storage::StorageResult;
 use builder::StorageBuilder;
 use errors::StorageError;
 use migration::run_migrations;
-use sea_orm::{Database, DatabaseConnection};
+use sea_orm::{ConnectionTrait, Database, DatabaseBackend, DatabaseConnection, Statement};
 
 /// Shared storage handle used by the HTTP API and monitor services.
 #[derive(Clone)]
@@ -30,7 +30,7 @@ impl SeaOrmStorage {
         let db = Database::connect(database_url)
             .await
             .map_err(StorageError::from_source)?;
-        run_migrations(&db).await?;
+        prepare_connection(&db).await?;
         Ok(Self { db: Arc::new(db) })
     }
 
@@ -45,4 +45,27 @@ impl SeaOrmStorage {
     pub fn connection(&self) -> &DatabaseConnection {
         self.db.as_ref()
     }
+}
+
+pub(crate) async fn prepare_connection(db: &DatabaseConnection) -> StorageResult<()> {
+    if db.get_database_backend() == DatabaseBackend::Sqlite {
+        configure_sqlite(db).await?;
+    }
+
+    run_migrations(db).await
+}
+
+pub(crate) async fn configure_sqlite(db: &DatabaseConnection) -> StorageResult<()> {
+    // WAL mode improves write concurrency; NORMAL keeps durability reasonable
+    // without the fsync cost of FULL.
+    for pragma in ["PRAGMA journal_mode=WAL;", "PRAGMA synchronous=NORMAL;"] {
+        db.execute(Statement::from_string(
+            DatabaseBackend::Sqlite,
+            pragma.to_owned(),
+        ))
+        .await
+        .map_err(StorageError::from_source)?;
+    }
+
+    Ok(())
 }

@@ -1,7 +1,7 @@
 use anon_ticket_domain::storage::StorageResult;
 use sea_orm::Database;
 
-use crate::{errors::StorageError, migration::run_migrations, SeaOrmStorage};
+use crate::{errors::StorageError, prepare_connection, SeaOrmStorage};
 
 #[derive(Default)]
 pub struct StorageBuilder {
@@ -25,7 +25,7 @@ impl StorageBuilder {
         let db = Database::connect(url)
             .await
             .map_err(StorageError::from_source)?;
-        run_migrations(&db).await?;
+        prepare_connection(&db).await?;
         Ok(SeaOrmStorage::from_connection(db))
     }
 }
