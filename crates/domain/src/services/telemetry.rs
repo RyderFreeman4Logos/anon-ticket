@@ -5,8 +5,6 @@ use once_cell::sync::OnceCell;
 use thiserror::Error;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
-use crate::config::hydrate_env_file;
-
 static SUBSCRIBER_INSTALLED: OnceCell<()> = OnceCell::new();
 static METRICS_HANDLE: OnceCell<Arc<PrometheusHandle>> = OnceCell::new();
 
@@ -22,7 +20,6 @@ impl TelemetryConfig {
     /// `<PREFIX>_`, e.g. `API_LOG_FILTER`. Missing entries fall back to sane
     /// defaults so binaries do not require extra configuration to boot.
     pub fn from_env(prefix: &str) -> Self {
-        let _ = hydrate_env_file();
         let upper = prefix.trim().to_ascii_uppercase();
         let log_key = format!("{}_LOG_FILTER", upper);
         let metrics_key = format!("{}_METRICS_ADDRESS", upper);

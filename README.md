@@ -19,7 +19,7 @@ that toolchain plus `clippy`/`rustfmt` is sufficient to reproduce CI locally.
 
 `anon_ticket_domain` is intentionally split into focused modules:
 
-- `config`: environment hydration plus `ApiConfig`/`BootstrapConfig` loading contracts.
+- `config`: env-driven loaders for `ApiConfig`/`BootstrapConfig`.
 - `model`: strongly typed payment/service token IDs, record structs, and hashing helpers.
 - `services::cache` / `services::telemetry`: PID cache abstractions, telemetry wiring, and abuse tracking utilities shared by binaries.
 - `storage::traits`: async `PaymentStore`/`TokenStore`/`MonitorStateStore` definitions and shared error types.
@@ -63,16 +63,15 @@ so that the workspace builds end-to-end. Replace these stubs incrementally as th
 
 ## Environment Setup
 
-1. Copy `.env.example` to `.env` and update the values per deployment target.
-   These variables cover both binaries: `anon_ticket_api` requires
-   `DATABASE_URL` / `API_BIND_ADDRESS` and optionally allows
-   `API_UNIX_SOCKET` to override the TCP listener plus
-   `API_INTERNAL_BIND_ADDRESS` / `API_INTERNAL_UNIX_SOCKET` for internal-only
-   routes. `anon_ticket_monitor` enforces the full Monero RPC contract through
-   `BootstrapConfig`. Optional telemetry knobs (`API_LOG_FILTER`,
-   `API_METRICS_ADDRESS`, `API_ABUSE_THRESHOLD`, `MONITOR_LOG_FILTER`,
-   `MONITOR_METRICS_ADDRESS`) fine-tune tracing verbosity and open Prometheus
-   listeners without preventing startup if unset.
+1. Copy `.env.example` to `.env`, update values, **then export them manually**
+   (the binaries no longer auto-load `.env`). Use `direnv allow` or
+   `set -a; source .env; set +a` before `cargo run`.
+   - `anon_ticket_api` requires `DATABASE_URL` and `API_BIND_ADDRESS`, plus
+     optional `API_UNIX_SOCKET`/`API_INTERNAL_BIND_ADDRESS`/`API_INTERNAL_UNIX_SOCKET`.
+   - `anon_ticket_monitor` requires `DATABASE_URL`, `MONERO_RPC_URL`,
+     and `MONITOR_START_HEIGHT` via `BootstrapConfig`.
+   - Optional telemetry knobs (`<PREFIX>_LOG_FILTER`, `<PREFIX>_METRICS_ADDRESS`)
+     tune tracing verbosity and Prometheus listeners without blocking startup.
 2. Store deployment-specific TOML/JSON secrets inside `config/` (see
    `config/README.md`). The folder is git-ignored to avoid committing secrets;
    document schemas or defaults instead of real credentials.

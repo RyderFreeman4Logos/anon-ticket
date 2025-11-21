@@ -8,7 +8,6 @@ authors.workspace = true
 publish = false
 
 [dependencies]
-dotenvy.workspace = true
 hex.workspace = true
 sha3.workspace = true
 thiserror.workspace = true

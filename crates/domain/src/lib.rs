@@ -10,7 +10,7 @@ pub mod model;
 pub mod services;
 pub mod storage;
 
-pub use config::{hydrate_env_file, ApiConfig, BootstrapConfig, ConfigError};
+pub use config::{ApiConfig, BootstrapConfig, ConfigError};
 pub use model::*;
 pub use services::cache::*;
 pub use services::telemetry::*;

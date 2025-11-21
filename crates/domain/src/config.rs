@@ -18,8 +18,6 @@ pub struct ApiConfig {
 impl ApiConfig {
     /// Loads only the environment variables required by the API binary.
     pub fn load_from_env() -> Result<Self, ConfigError> {
-        hydrate_env_file()?;
-
         Ok(Self {
             database_url: get_required_var("DATABASE_URL")?,
             api_bind_address: get_required_var("API_BIND_ADDRESS")?,
@@ -54,8 +52,8 @@ impl ApiConfig {
     }
 }
 
-/// Key configuration derived from `.env`/process variables so binaries can
-/// share a deterministic environment contract.
+/// Key configuration derived from process variables so binaries can share a
+/// deterministic environment contract.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BootstrapConfig {
     database_url: String,
@@ -64,12 +62,10 @@ pub struct BootstrapConfig {
 }
 
 impl BootstrapConfig {
-    /// Loads configuration by hydrating `.env` (if present) and reading the
-    /// required process variables. Missing or malformed entries surface as
-    /// `ConfigError` so binaries can respond gracefully.
+    /// Loads configuration by reading the required process variables. Missing
+    /// or malformed entries surface as `ConfigError` so binaries can respond
+    /// gracefully.
     pub fn load_from_env() -> Result<Self, ConfigError> {
-        hydrate_env_file()?;
-
         let database_url = get_required_var("DATABASE_URL")?;
         let monero_rpc_url = get_required_var("MONERO_RPC_URL")?;
         let monitor_start_height =
@@ -125,20 +121,7 @@ fn get_optional_var(key: &'static str) -> Option<String> {
     })
 }
 
-pub fn hydrate_env_file() -> Result<(), ConfigError> {
-    if env::var_os("ANON_TICKET_SKIP_DOTENV").is_some() {
-        return Ok(());
-    }
-    match dotenvy::dotenv() {
-        Ok(_) => {}
-        Err(dotenvy::Error::Io(err)) if err.kind() == std::io::ErrorKind::NotFound => {}
-        Err(err) => return Err(ConfigError::Dotenv { source: err }),
-    }
-
-    Ok(())
-}
-
-/// Errors emitted when `.env` hydration or environment parsing fails.
+/// Errors emitted when environment parsing fails.
 #[derive(Debug, Error)]
 pub enum ConfigError {
     #[error("missing required environment variable `{key}`")]
@@ -148,11 +131,6 @@ pub enum ConfigError {
         key: &'static str,
         #[source]
         source: std::num::ParseIntError,
-    },
-    #[error("failed to load .env file: {source}")]
-    Dotenv {
-        #[from]
-        source: dotenvy::Error,
     },
 }
 
