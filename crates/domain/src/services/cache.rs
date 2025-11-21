@@ -1,9 +1,6 @@
-use std::{
-    collections::HashMap,
-    collections::HashSet,
-    sync::RwLock,
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
+
+use moka::sync::Cache;
 
 use crate::model::PaymentId;
 
@@ -33,59 +30,56 @@ pub trait PidCache: Send + Sync {
 
 #[derive(Debug)]
 pub struct InMemoryPidCache {
-    positives: RwLock<HashSet<String>>,
-    negatives: RwLock<HashMap<String, Instant>>,
-    ttl: Duration,
+    positives: Cache<String, ()>,
+    negatives: Cache<String, Instant>,
 }
 
 impl PidCache for InMemoryPidCache {
     fn might_contain(&self, pid: &PaymentId) -> bool {
-        self.prune_expired();
-        let negatives = self.negatives.read().unwrap();
-        !negatives.contains_key(pid.as_str())
+        !self.negatives.contains_key(pid.as_str())
     }
 
     fn mark_present(&self, pid: &PaymentId) {
-        let mut positives = self.positives.write().unwrap();
-        positives.insert(pid.as_str().to_string());
-        drop(positives);
-        let mut negatives = self.negatives.write().unwrap();
-        negatives.remove(pid.as_str());
+        self.positives.insert(pid.as_str().to_string(), ());
+        self.negatives.invalidate(pid.as_str());
     }
 
     fn mark_absent(&self, pid: &PaymentId) {
-        let mut negatives = self.negatives.write().unwrap();
-        negatives.insert(pid.as_str().to_string(), Instant::now());
+        self.negatives
+            .insert(pid.as_str().to_string(), Instant::now());
     }
 
     fn negative_entry_age(&self, pid: &PaymentId) -> Option<Duration> {
-        self.prune_expired();
-        let negatives = self.negatives.read().unwrap();
-        negatives
+        self.negatives
             .get(pid.as_str())
-            .map(|inserted| Instant::now().saturating_duration_since(*inserted))
+            .map(|inserted| Instant::now().saturating_duration_since(inserted))
     }
 }
 
 impl InMemoryPidCache {
     const DEFAULT_TTL: Duration = Duration::from_secs(60);
+    const DEFAULT_CAPACITY: u64 = 100_000;
 
     pub fn new(ttl: Duration) -> Self {
+        Self::with_capacity(ttl, Self::DEFAULT_CAPACITY)
+    }
+
+    fn with_capacity(ttl: Duration, capacity: u64) -> Self {
+        let capacity = capacity.max(1);
         Self {
-            positives: RwLock::new(HashSet::new()),
-            negatives: RwLock::new(HashMap::new()),
-            ttl,
+            positives: Cache::builder()
+                .time_to_live(ttl)
+                .max_capacity(capacity)
+                .build(),
+            negatives: Cache::builder()
+                .time_to_live(ttl)
+                .max_capacity(capacity)
+                .build(),
         }
     }
 
-    fn prune_expired(&self) {
-        let mut negatives = self.negatives.write().unwrap();
-        let now = Instant::now();
-        negatives.retain(|_, inserted| now.duration_since(*inserted) <= self.ttl);
-    }
-
     pub fn known_present(&self, pid: &PaymentId) -> bool {
-        self.positives.read().unwrap().contains(pid.as_str())
+        self.positives.contains_key(pid.as_str())
     }
 }
 
