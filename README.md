@@ -104,8 +104,8 @@ a handle that satisfies the domain traits.
 The `anon_ticket_domain` crate exposes `validate_pid` / `PaymentId::parse` to
 enforce the security rule that every client-supplied PID is a 64-character hex
 string. Use `derive_service_token(pid, txid)` to deterministically derive the
-service token returned to clients—both helpers rely on SHA3-256 to match the
-project's threat model.
+service token returned to clients; the helper hashes `pid|txid` with SHA3-256
+to avoid collisions if component lengths evolve.
 
 ## Redemption API
 

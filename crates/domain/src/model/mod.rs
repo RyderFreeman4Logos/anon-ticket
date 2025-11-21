@@ -22,9 +22,12 @@ pub fn derive_pid_fingerprint(pid: &str) -> String {
 }
 
 /// Generates a deterministic SHA3-256 service token from the PID + TXID pair.
+/// A separator is inserted between components to avoid accidental collisions if
+/// their lengths diverge in future formats.
 pub fn derive_service_token(pid: &PaymentId, txid: &str) -> ServiceToken {
     let mut hasher = Sha3_256::new();
     hasher.update(pid.as_str().as_bytes());
+    hasher.update(b"|");
     hasher.update(txid.as_bytes());
     let digest = hasher.finalize();
     ServiceToken::new(hex_encode(digest))
@@ -226,6 +229,16 @@ mod tests {
         let a = derive_service_token(&pid, "tx1");
         let b = derive_service_token(&pid, "tx1");
         assert_eq!(a.as_str(), b.as_str());
+    }
+
+    #[test]
+    fn service_token_uses_separator_and_sha3() {
+        let pid = PaymentId::parse(VALID_PID).unwrap();
+        let token = derive_service_token(&pid, "tx1");
+        assert_eq!(
+            token.as_str(),
+            "6f70c79989f0d39772b9f81cfed1463a80f59e5b085dc1907f5e1a7f12482d86"
+        );
     }
 
     #[test]
