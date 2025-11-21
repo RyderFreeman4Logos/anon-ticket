@@ -24,7 +24,7 @@ impl TokenStore for SeaOrmStorage {
             .insert(self.connection())
             .await
             .map_err(StorageError::from_source)?;
-        Ok(token_to_record(created))
+        token_to_record(created)
     }
 
     async fn find_token(&self, token: &ServiceToken) -> StorageResult<Option<ServiceTokenRecord>> {
@@ -33,7 +33,7 @@ impl TokenStore for SeaOrmStorage {
             .one(self.connection())
             .await
             .map_err(StorageError::from_source)?;
-        Ok(maybe.map(token_to_record))
+        maybe.map(token_to_record).transpose()
     }
 
     async fn revoke_token(
@@ -50,7 +50,7 @@ impl TokenStore for SeaOrmStorage {
         };
 
         if model.revoked_at.is_some() {
-            return Ok(Some(token_to_record(model)));
+            return token_to_record(model).map(Some);
         }
 
         let mut active: service_tokens::ActiveModel = model.into();
@@ -63,18 +63,21 @@ impl TokenStore for SeaOrmStorage {
             .update(self.connection())
             .await
             .map_err(StorageError::from_source)?;
-        Ok(Some(token_to_record(updated)))
+        token_to_record(updated).map(Some)
     }
 }
 
-fn token_to_record(model: service_tokens::Model) -> ServiceTokenRecord {
-    ServiceTokenRecord {
+fn token_to_record(model: service_tokens::Model) -> StorageResult<ServiceTokenRecord> {
+    let pid =
+        PaymentId::try_from(model.pid).map_err(|err| StorageError::Database(err.to_string()))?;
+
+    Ok(ServiceTokenRecord {
         token: ServiceToken::new(model.token),
-        pid: PaymentId::new(model.pid),
+        pid,
         amount: model.amount,
         issued_at: model.issued_at,
         revoked_at: model.revoked_at,
         revoke_reason: model.revoke_reason,
         abuse_score: model.abuse_score,
-    }
+    })
 }

@@ -1,6 +1,7 @@
 //! Data structures and helpers shared across the API and monitor binaries.
 
 use chrono::{DateTime, Utc};
+use getrandom::getrandom;
 use hex::encode as hex_encode;
 use sha3::{Digest, Sha3_256};
 use thiserror::Error;
@@ -58,7 +59,7 @@ pub fn validate_pid(pid: &str) -> Result<(), PidFormatError> {
 pub struct PaymentId(String);
 
 impl PaymentId {
-    pub fn new(value: impl Into<String>) -> Self {
+    pub(crate) fn new(value: impl Into<String>) -> Self {
         let mut owned = value.into();
         owned.make_ascii_lowercase();
         Self(owned)
@@ -67,6 +68,12 @@ impl PaymentId {
     pub fn parse(pid: &str) -> Result<Self, PidFormatError> {
         validate_pid(pid)?;
         Ok(Self::new(pid))
+    }
+
+    pub fn generate() -> Result<Self, getrandom::Error> {
+        let mut bytes = [0u8; 32];
+        getrandom(&mut bytes)?;
+        Ok(Self::new(hex_encode(bytes)))
     }
 
     pub fn as_str(&self) -> &str {
@@ -78,9 +85,12 @@ impl PaymentId {
     }
 }
 
-impl From<&str> for PaymentId {
-    fn from(value: &str) -> Self {
-        Self::new(value.to_owned())
+impl TryFrom<String> for PaymentId {
+    type Error = PidFormatError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        validate_pid(&value)?;
+        Ok(Self::new(value))
     }
 }
 
@@ -216,5 +226,12 @@ mod tests {
         let a = derive_service_token(&pid, "tx1");
         let b = derive_service_token(&pid, "tx1");
         assert_eq!(a.as_str(), b.as_str());
+    }
+
+    #[test]
+    fn generate_produces_valid_pid() {
+        let pid = PaymentId::generate().expect("entropy available");
+        assert_eq!(pid.as_str().len(), PID_LENGTH);
+        assert!(validate_pid(pid.as_str()).is_ok());
     }
 }

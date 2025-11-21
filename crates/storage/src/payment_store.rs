@@ -70,8 +70,11 @@ impl PaymentStore for SeaOrmStorage {
 
         txn.commit().await.map_err(StorageError::from_source)?;
 
+        let pid = PaymentId::try_from(updated.pid)
+            .map_err(|err| StorageError::Database(err.to_string()))?;
+
         Ok(Some(ClaimOutcome {
-            pid: PaymentId::new(updated.pid),
+            pid,
             txid: updated.txid,
             amount: updated.amount,
             block_height: updated.block_height,
@@ -85,13 +88,15 @@ impl PaymentStore for SeaOrmStorage {
             .one(self.connection())
             .await
             .map_err(StorageError::from_source)?;
-        Ok(maybe.map(payment_to_record))
+        maybe.map(payment_to_record).transpose()
     }
 }
 
-fn payment_to_record(model: payments::Model) -> PaymentRecord {
-    PaymentRecord {
-        pid: PaymentId::new(model.pid),
+fn payment_to_record(model: payments::Model) -> StorageResult<PaymentRecord> {
+    let pid =
+        PaymentId::try_from(model.pid).map_err(|err| StorageError::Database(err.to_string()))?;
+
+    Ok(PaymentRecord {
         txid: model.txid,
         amount: model.amount,
         block_height: model.block_height,
@@ -101,5 +106,6 @@ fn payment_to_record(model: payments::Model) -> PaymentRecord {
         },
         created_at: model.created_at,
         claimed_at: model.claimed_at,
-    }
+        pid,
+    })
 }

@@ -23,10 +23,18 @@ pub async fn process_entry(
     }
 
     let detected_at = DateTime::from_timestamp(entry.timestamp as i64, 0).unwrap_or_else(Utc::now);
+    let pid = match PaymentId::parse(pid) {
+        Ok(pid) => pid,
+        Err(_) => {
+            warn!(pid, "skipping invalid pid after parse");
+            counter!("monitor_payments_ingested_total", 1, "result" => "invalid_pid");
+            return Ok(false);
+        }
+    };
 
     storage
         .insert_payment(NewPayment {
-            pid: PaymentId::new(pid.clone()),
+            pid,
             txid: entry.txid.clone(),
             amount: entry.amount,
             block_height: height,
