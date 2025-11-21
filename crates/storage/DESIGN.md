@@ -42,11 +42,13 @@ RETURNING *
 
 This single SQL statement guarantees atomicity at the database engine level. It eliminates the need for application-level locks or "Select-for-Update" transactions, keeping the database contention window as small as possible.
 
-## 3. Strict Schema Definition
+## 3. Binary Optimization (Zero-Copy Storage)
 
-We reject `TEXT` affinity where possible.
-- **PIDs & Tokens**: Defined as `VARCHAR(64)`. This aligns perfectly with the 32-byte hex strings enforced by the domain layer.
-- **Benefits**: On Postgres, this enforces length constraints. On SQLite, while types are flexible, it documents intent and allows for potential future optimizations.
+We reject `TEXT` affinity for cryptographic identifiers.
+- **PIDs & Tokens**: Defined as `BLOB` (SQLite) or `BYTEA` (Postgres) with a length of 32 bytes.
+- **Rationale**:
+    - **Space Efficiency**: Storing raw bytes instead of Hex strings (64 bytes) cuts the index size in half. Smaller indexes mean more pages fit in RAM, drastically improving cache hit rates.
+    - **Performance**: It avoids redundant Hex encoding/decoding cycles at the storage layer. Data flows from the domain logic (`[u8; 32]`) directly to the database page.
 
 ---
 
