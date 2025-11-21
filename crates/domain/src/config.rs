@@ -101,7 +101,17 @@ impl BootstrapConfig {
 }
 
 fn get_required_var(key: &'static str) -> Result<String, ConfigError> {
-    env::var(key).map_err(|_| ConfigError::MissingVar { key })
+    match env::var(key) {
+        Ok(value) => {
+            let trimmed = value.trim();
+            if trimmed.is_empty() {
+                Err(ConfigError::MissingVar { key })
+            } else {
+                Ok(trimmed.to_string())
+            }
+        }
+        Err(_) => Err(ConfigError::MissingVar { key }),
+    }
 }
 
 fn get_optional_var(key: &'static str) -> Option<String> {
@@ -200,6 +210,37 @@ mod tests {
         std::env::remove_var("API_UNIX_SOCKET");
         std::env::remove_var("API_INTERNAL_BIND_ADDRESS");
         std::env::remove_var("API_INTERNAL_UNIX_SOCKET");
+        set_env();
+    }
+
+    #[test]
+    fn required_env_vars_are_trimmed() {
+        let _guard = ENV_GUARD.lock().unwrap();
+        set_env();
+        std::env::set_var("DATABASE_URL", "  sqlite://trim.db  ");
+        std::env::set_var("API_BIND_ADDRESS", " 127.0.0.1:8081 ");
+
+        let config = ApiConfig::load_from_env().expect("config loads");
+        assert_eq!(config.database_url(), "sqlite://trim.db");
+        assert_eq!(config.api_bind_address(), "127.0.0.1:8081");
+
+        set_env();
+    }
+
+    #[test]
+    fn empty_required_env_var_is_treated_as_missing() {
+        let _guard = ENV_GUARD.lock().unwrap();
+        set_env();
+        std::env::set_var("DATABASE_URL", "   ");
+
+        let err = ApiConfig::load_from_env().unwrap_err();
+        assert!(matches!(
+            err,
+            ConfigError::MissingVar {
+                key: "DATABASE_URL"
+            }
+        ));
+
         set_env();
     }
 
