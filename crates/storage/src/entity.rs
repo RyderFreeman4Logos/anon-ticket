@@ -17,11 +17,11 @@ pub mod payments {
     }
 
     #[derive(Copy, Clone, Debug, PartialEq, Eq, EnumIter, DeriveActiveEnum)]
-    #[sea_orm(rs_type = "String", db_type = "String(Some(16))")]
+    #[sea_orm(rs_type = "i8", db_type = "TinyInteger")]
     pub enum PaymentStatusDb {
-        #[sea_orm(string_value = "unclaimed")]
+        #[sea_orm(num_value = 0)]
         Unclaimed,
-        #[sea_orm(string_value = "claimed")]
+        #[sea_orm(num_value = 1)]
         Claimed,
     }
 

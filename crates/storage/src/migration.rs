@@ -33,7 +33,7 @@ pub async fn run_migrations(db: &DatabaseConnection) -> StorageResult<()> {
         )
         .col(
             ColumnDef::new(payments::Column::Status)
-                .string_len(16)
+                .tiny_integer()
                 .not_null(),
         )
         .col(
