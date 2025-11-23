@@ -171,3 +171,7 @@ e7be3447d3c09f5a8d57ba732a2d56e928f2f3b0 feat(monitor): drop dust payments below
 - **Worker Wiring**: Propagated the threshold through `run_monitor`/`handle_batch` and expanded unit tests to cover dust filtering paths.
 - **Docs & Tracking**: Documented the new env var in `crates/monitor/README.md` and checked off ShortTerm-24 in `TODO.md`.
 - **Verification**: Ran `cargo fmt --all`, `cargo clippy --workspace --all-features -- -D warnings`, and `cargo test --all --all-features`.
+4c74338... docs(monitor): add watch-only wallet deployment guide
+
+- Added `crates/monitor/secure-monero-rpc-deployment.md` detailing how to export view keys and run a watch-only `monero-wallet-rpc`.
+- Updated `README.md` to reference the secure deployment guide.
