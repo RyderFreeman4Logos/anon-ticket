@@ -156,3 +156,7 @@ f67e6a8e32906859336124705001389803874020 chore(monitor): update changelog for ro
 - **Testing**: Added unit tests for `RpcTransferSource` JSON deserialization to verify field mappings.
 - **Documentation**: Added `crates/monitor/BLOG.md` detailing the "Single-Node Fortress" design philosophy for payment monitoring.
 - **Refinement**: Added code comments explaining the `i64` amount type constraint.
+53d553d... docs(monitor): rename blog to design and add readme
+
+- **Refactor**: Renamed `BLOG.md` to `DESIGN.md` to align with workspace conventions.
+- **Docs**: Added `README.md` for `anon_ticket_monitor` covering configuration and architecture overview.
