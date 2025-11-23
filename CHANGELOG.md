@@ -160,3 +160,6 @@ f67e6a8e32906859336124705001389803874020 chore(monitor): update changelog for ro
 
 - **Refactor**: Renamed `BLOG.md` to `DESIGN.md` to align with workspace conventions.
 - **Docs**: Added `README.md` for `anon_ticket_monitor` covering configuration and architecture overview.
+c7fc8f0... chore(todo): plan short-term dust filtering
+
+- Planned `ShortTerm-24` to implement a minimum payment amount filter in the monitor, mitigating resource exhaustion attacks from dust transactions.
