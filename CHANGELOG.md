@@ -1,3 +1,10 @@
+28584c7e9563cad6c78b75343e56790cf7556e88 feat(monitor): harden worker loop and add tests
+
+- **Robustness**: Updated `run_monitor` to catch and log transient storage errors instead of panicking, ensuring the service survives DB glitches.
+- **Refactor**: Genericized `run_monitor` and `process_entry` to accept any implementation of `PaymentStore` + `MonitorStateStore`, enabling easier testing.
+- **Cleanup**: Removed redundant `validate_pid` checks in pipeline, relying on the hardened `PaymentId::parse` logic.
+- **Testing**: Added unit tests for `handle_batch` error propagation using Mock storage.
+
 f2a598afe6d5a375b28ce0a3038c6de7352969db feat(storage): optimize for single-node performance (WAL, binary types, tinyint status)
 
 - **Performance**: Enforced SQLite WAL mode and synchronous=NORMAL in `SeaOrmStorage::connect`.
