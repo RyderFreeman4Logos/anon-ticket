@@ -163,3 +163,11 @@ f67e6a8e32906859336124705001389803874020 chore(monitor): update changelog for ro
 c7fc8f0... chore(todo): plan short-term dust filtering
 
 - Planned `ShortTerm-24` to implement a minimum payment amount filter in the monitor, mitigating resource exhaustion attacks from dust transactions.
+
+e7be3447d3c09f5a8d57ba732a2d56e928f2f3b0 feat(monitor): drop dust payments below threshold
+
+- **Config**: Added optional `MONITOR_MIN_PAYMENT_AMOUNT` to `BootstrapConfig` (default `1_000_000` atomic units) with parsing tests to enforce trimmed, numeric input.
+- **Ingestion**: `process_entry` now rejects transfers below the minimum, logs a warning, and increments a `dust` counter instead of persisting low-value records.
+- **Worker Wiring**: Propagated the threshold through `run_monitor`/`handle_batch` and expanded unit tests to cover dust filtering paths.
+- **Docs & Tracking**: Documented the new env var in `crates/monitor/README.md` and checked off ShortTerm-24 in `TODO.md`.
+- **Verification**: Ran `cargo fmt --all`, `cargo clippy --workspace --all-features -- -D warnings`, and `cargo test --all --all-features`.
