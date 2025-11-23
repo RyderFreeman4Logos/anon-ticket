@@ -97,3 +97,41 @@ impl TransferSource for RpcTransferSource {
         Ok(parsed.result.height)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::TransfersResponse;
+
+    #[test]
+    fn deserializes_monero_rpc_response() {
+        let json = r#"
+        {
+            "in": [
+                {
+                    "amount": 1000000000000,
+                    "payment_id": "60900e56061d20a1",
+                    "height": 123456,
+                    "timestamp": 1535918400,
+                    "txid": "c3d224630a6f59856302e592d329953df0b2a057693906976e5019df6347320d",
+                    "type": "in",
+                    "unlock_time": 0,
+                    "double_spend_seen": false,
+                    "fee": 0,
+                    "note": "",
+                    "subaddr_index": { "major": 0, "minor": 0 },
+                    "confirmations": 1,
+                    "suggested_confirmations_threshold": 1
+                }
+            ]
+        }
+        "#;
+
+        let response: TransfersResponse = serde_json::from_str(json).expect("failed to parse json");
+        assert_eq!(response.incoming.len(), 1);
+        
+        let entry = &response.incoming[0];
+        assert_eq!(entry.amount, 1_000_000_000_000);
+        assert_eq!(entry.payment_id.as_deref(), Some("60900e56061d20a1"));
+        assert_eq!(entry.height, Some(123456));
+    }
+}
