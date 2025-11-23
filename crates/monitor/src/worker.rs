@@ -47,11 +47,20 @@ where
         .last_processed_height()
         .await?
         .unwrap_or(config.monitor_start_height());
+    let min_payment_amount = config.monitor_min_payment_amount();
 
     loop {
         match source.fetch_transfers(height).await {
             Ok(transfers) => {
-                if let Err(err) = handle_batch(&storage, &source, transfers, &mut height).await {
+                if let Err(err) = handle_batch(
+                    &storage,
+                    &source,
+                    transfers,
+                    &mut height,
+                    min_payment_amount,
+                )
+                .await
+                {
                     warn!(?err, "batch processing failed, retrying in next cycle");
                 }
             }
@@ -69,6 +78,7 @@ async fn handle_batch<S, D>(
     source: &S,
     transfers: TransfersResponse,
     current_height: &mut u64,
+    min_payment_amount: i64,
 ) -> Result<(), MonitorError>
 where
     S: TransferSource,
@@ -84,7 +94,7 @@ where
             let h = h as u64;
             observed_height = Some(observed_height.map_or(h, |current| current.max(h)));
         }
-        process_entry(storage, entry).await?;
+        process_entry(storage, entry, min_payment_amount).await?;
     }
 
     let mut next_height = *current_height;
@@ -177,12 +187,12 @@ mod tests {
         };
 
         // Should fail
-        let result = handle_batch(&storage, &source, transfers.clone(), &mut height).await;
+        let result = handle_batch(&storage, &source, transfers.clone(), &mut height, 1).await;
         assert!(result.is_err());
 
         // Should succeed
         should_fail.store(false, Ordering::SeqCst);
-        let result = handle_batch(&storage, &source, transfers, &mut height).await;
+        let result = handle_batch(&storage, &source, transfers, &mut height, 1).await;
         assert!(result.is_ok());
     }
 }

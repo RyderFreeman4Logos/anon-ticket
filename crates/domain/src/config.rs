@@ -59,7 +59,10 @@ pub struct BootstrapConfig {
     database_url: String,
     monero_rpc_url: String,
     monitor_start_height: u64,
+    monitor_min_payment_amount: i64,
 }
+
+const DEFAULT_MIN_PAYMENT_AMOUNT: i64 = 1_000_000;
 
 impl BootstrapConfig {
     /// Loads configuration by reading the required process variables. Missing
@@ -75,11 +78,21 @@ impl BootstrapConfig {
                     key: "MONITOR_START_HEIGHT",
                     source,
                 })?;
+        let monitor_min_payment_amount = get_optional_var("MONITOR_MIN_PAYMENT_AMOUNT")
+            .map(|value| {
+                value.parse().map_err(|source| ConfigError::InvalidNumber {
+                    key: "MONITOR_MIN_PAYMENT_AMOUNT",
+                    source,
+                })
+            })
+            .transpose()? // propagate parse errors
+            .unwrap_or(DEFAULT_MIN_PAYMENT_AMOUNT);
 
         Ok(Self {
             database_url,
             monero_rpc_url,
             monitor_start_height,
+            monitor_min_payment_amount,
         })
     }
 
@@ -93,6 +106,10 @@ impl BootstrapConfig {
 
     pub fn monitor_start_height(&self) -> u64 {
         self.monitor_start_height
+    }
+
+    pub fn monitor_min_payment_amount(&self) -> i64 {
+        self.monitor_min_payment_amount
     }
 }
 
@@ -150,6 +167,7 @@ mod tests {
         std::env::remove_var("API_INTERNAL_UNIX_SOCKET");
         std::env::set_var("MONERO_RPC_URL", "http://localhost:18082/json_rpc");
         std::env::set_var("MONITOR_START_HEIGHT", "42");
+        std::env::remove_var("MONITOR_MIN_PAYMENT_AMOUNT");
     }
 
     #[test]
@@ -229,5 +247,21 @@ mod tests {
         let config = BootstrapConfig::load_from_env().expect("config loads");
         assert_eq!(config.database_url(), "sqlite://test.db");
         assert_eq!(config.monitor_start_height(), 42);
+        assert_eq!(
+            config.monitor_min_payment_amount(),
+            DEFAULT_MIN_PAYMENT_AMOUNT
+        );
+    }
+
+    #[test]
+    fn monitor_min_payment_amount_overrides_default() {
+        let _guard = ENV_GUARD.lock().unwrap();
+        set_env();
+        std::env::set_var("MONITOR_MIN_PAYMENT_AMOUNT", " 2000000 ");
+
+        let config = BootstrapConfig::load_from_env().expect("config loads");
+        assert_eq!(config.monitor_min_payment_amount(), 2_000_000);
+
+        set_env();
     }
 }

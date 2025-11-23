@@ -128,7 +128,7 @@ mod tests {
 
         let response: TransfersResponse = serde_json::from_str(json).expect("failed to parse json");
         assert_eq!(response.incoming.len(), 1);
-        
+
         let entry = &response.incoming[0];
         assert_eq!(entry.amount, 1_000_000_000_000);
         assert_eq!(entry.payment_id.as_deref(), Some("60900e56061d20a1"));

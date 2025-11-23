@@ -18,6 +18,7 @@ The monitor is configured strictly via environment variables (or `.env` file loa
 | `DATABASE_URL` | Path to the SQLite database (e.g., `sqlite://ticket.db?mode=rwc`). | Yes |
 | `MONERO_RPC_URL` | URL of the `monero-wallet-rpc` (e.g., `http://127.0.0.1:18083/json_rpc`). | Yes |
 | `MONITOR_START_HEIGHT` | Block height to start scanning from if no state exists in DB. | Yes |
+| `MONITOR_MIN_PAYMENT_AMOUNT` | Minimum atomic units required to persist a payment (defaults to `1_000_000`). | No |
 | `RUST_LOG` | Tracing filter (e.g., `info,anon_ticket_monitor=debug`). | No |
 
 ## 🏗️ Architecture
