@@ -35,20 +35,28 @@ We utilize the `UPDATE ... RETURNING` clause supported by both SQLite (3.35+) an
 
 ```sql
 UPDATE payments
-SET status = 'claimed', claimed_at = NOW()
-WHERE pid = $PID AND status = 'unclaimed'
+SET status = 1, claimed_at = NOW() -- 1 = Claimed
+WHERE pid = $PID AND status = 0    -- 0 = Unclaimed
 RETURNING *
 ```
 
 This single SQL statement guarantees atomicity at the database engine level. It eliminates the need for application-level locks or "Select-for-Update" transactions, keeping the database contention window as small as possible.
 
-## 3. Binary Optimization (Zero-Copy Storage)
+## 3. Extreme Compactness: Binary IDs & TinyInts
 
+We rigorously minimize the storage footprint to maximize cache locality and IO throughput.
+
+### Binary Identifiers
 We reject `TEXT` affinity for cryptographic identifiers.
 - **PIDs & Tokens**: Defined as `BLOB` (SQLite) or `BYTEA` (Postgres) with a length of 32 bytes.
 - **Rationale**:
-    - **Space Efficiency**: Storing raw bytes instead of Hex strings (64 bytes) cuts the index size in half. Smaller indexes mean more pages fit in RAM, drastically improving cache hit rates.
-    - **Performance**: It avoids redundant Hex encoding/decoding cycles at the storage layer. Data flows from the domain logic (`[u8; 32]`) directly to the database page.
+    - **Space Efficiency**: Storing raw bytes instead of Hex strings (64 bytes) cuts the index size in half. Smaller indexes mean more pages fit in RAM.
+    - **Performance**: Avoids redundant Hex encoding/decoding cycles at the storage layer.
+
+### TinyInt Status
+We map low-cardinality enums to single-byte integers.
+- **PaymentStatus**: Stored as `TINYINT` (0 = Unclaimed, 1 = Claimed) instead of `VARCHAR(16)`.
+- **Rationale**: Reduces row size by ~15 bytes per record. In a table with millions of payments, this saves tens of megabytes of RAM/disk and significantly reduces write amplification.
 
 ---
 
