@@ -43,3 +43,9 @@ export MONITOR_START_HEIGHT=3000000
 
 cargo run -p anon_ticket_monitor
 ```
+
+## 🔐 Production Security
+
+For production deployments, you should **NEVER** keep spend keys on the monitoring server. 
+
+See our detailed guide on [Securely Deploying monero-wallet-rpc Without Spend Keys](./secure-monero-rpc-deployment.md) to learn how to setup a **View-Only** wallet topology.
