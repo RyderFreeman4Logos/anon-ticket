@@ -8,9 +8,8 @@ use tracing::warn;
 use anon_ticket_domain::{
     config::ConfigError,
     services::telemetry::TelemetryError,
-    storage::{MonitorStateStore, StorageError},
+    storage::{MonitorStateStore, PaymentStore, StorageError},
 };
-use anon_ticket_storage::SeaOrmStorage;
 
 use crate::{
     pipeline::process_entry,
@@ -35,13 +34,14 @@ impl From<reqwest::Error> for MonitorError {
     }
 }
 
-pub async fn run_monitor<S>(
+pub async fn run_monitor<S, D>(
     config: anon_ticket_domain::config::BootstrapConfig,
-    storage: SeaOrmStorage,
+    storage: D,
     source: S,
 ) -> Result<(), MonitorError>
 where
     S: TransferSource,
+    D: MonitorStateStore + PaymentStore,
 {
     let mut height = storage
         .last_processed_height()
@@ -51,7 +51,9 @@ where
     loop {
         match source.fetch_transfers(height).await {
             Ok(transfers) => {
-                handle_batch(&storage, &source, transfers, &mut height).await?;
+                if let Err(err) = handle_batch(&storage, &source, transfers, &mut height).await {
+                    warn!(?err, "batch processing failed, retrying in next cycle");
+                }
             }
             Err(err) => {
                 counter!("monitor_rpc_calls_total", 1, "result" => "error");
@@ -62,14 +64,15 @@ where
     }
 }
 
-async fn handle_batch<S>(
-    storage: &SeaOrmStorage,
+async fn handle_batch<S, D>(
+    storage: &D,
     source: &S,
     transfers: TransfersResponse,
     current_height: &mut u64,
 ) -> Result<(), MonitorError>
 where
     S: TransferSource,
+    D: MonitorStateStore + PaymentStore,
 {
     counter!("monitor_rpc_calls_total", 1, "result" => "ok");
     histogram!("monitor_batch_entries", transfers.incoming.len() as f64);
@@ -95,4 +98,91 @@ where
     gauge!("monitor_last_height", next_height as f64);
     *current_height = next_height;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use anon_ticket_domain::model::{ClaimOutcome, NewPayment, PaymentId, PaymentRecord};
+    use anon_ticket_domain::storage::{PaymentStore, StorageResult};
+    use async_trait::async_trait;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+
+    #[derive(Clone)]
+    struct MockStorage {
+        should_fail: Arc<AtomicBool>,
+    }
+
+    #[async_trait]
+    impl MonitorStateStore for MockStorage {
+        async fn last_processed_height(&self) -> StorageResult<Option<u64>> {
+            Ok(Some(100))
+        }
+        async fn upsert_last_processed_height(&self, _height: u64) -> StorageResult<()> {
+            Ok(())
+        }
+    }
+
+    #[async_trait]
+    impl PaymentStore for MockStorage {
+        async fn insert_payment(&self, _payment: NewPayment) -> StorageResult<()> {
+            if self.should_fail.load(Ordering::SeqCst) {
+                return Err(StorageError::Database("simulated failure".into()));
+            }
+            Ok(())
+        }
+        async fn claim_payment(&self, _pid: &PaymentId) -> StorageResult<Option<ClaimOutcome>> {
+            Ok(None)
+        }
+        async fn find_payment(&self, _pid: &PaymentId) -> StorageResult<Option<PaymentRecord>> {
+            Ok(None)
+        }
+    }
+
+    struct MockSource;
+
+    #[async_trait]
+    impl TransferSource for MockSource {
+        async fn fetch_transfers(
+            &self,
+            _start_height: u64,
+        ) -> Result<TransfersResponse, MonitorError> {
+            Ok(TransfersResponse { incoming: vec![] })
+        }
+        async fn wallet_height(&self) -> Result<u64, MonitorError> {
+            Ok(100)
+        }
+    }
+
+    #[tokio::test]
+    async fn handle_batch_propagates_storage_error() {
+        let should_fail = Arc::new(AtomicBool::new(true));
+        let storage = MockStorage {
+            should_fail: should_fail.clone(),
+        };
+        let source = MockSource;
+        let mut height = 100;
+
+        let transfers = TransfersResponse {
+            incoming: vec![crate::rpc::TransferEntry {
+                txid: "tx1".into(),
+                payment_id: Some(
+                    "1111111111111111111111111111111111111111111111111111111111111111".into(),
+                ),
+                amount: 100,
+                height: Some(101),
+                timestamp: 0,
+            }],
+        };
+
+        // Should fail
+        let result = handle_batch(&storage, &source, transfers.clone(), &mut height).await;
+        assert!(result.is_err());
+
+        // Should succeed
+        should_fail.store(false, Ordering::SeqCst);
+        let result = handle_batch(&storage, &source, transfers, &mut height).await;
+        assert!(result.is_ok());
+    }
 }

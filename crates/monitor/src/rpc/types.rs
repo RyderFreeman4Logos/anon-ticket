@@ -13,13 +13,13 @@ pub struct JsonRpcResponse<T> {
     pub result: T,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Default, Clone)]
 pub struct TransfersResponse {
     #[serde(default, rename = "in")]
     pub incoming: Vec<TransferEntry>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct TransferEntry {
     pub txid: String,
     pub amount: i64,
