@@ -151,3 +151,8 @@ f2a598afe6d5a375b28ce0a3038c6de7352969db feat(storage): optimize for single-node
 f67e6a8e32906859336124705001389803874020 chore(monitor): update changelog for robustness fixes
 
 - Updated CHANGELOGs to record monitor hardening work.
+8a343f8... chore(monitor): fix rpc tests and add technical blog
+
+- **Testing**: Added unit tests for `RpcTransferSource` JSON deserialization to verify field mappings.
+- **Documentation**: Added `crates/monitor/BLOG.md` detailing the "Single-Node Fortress" design philosophy for payment monitoring.
+- **Refinement**: Added code comments explaining the `i64` amount type constraint.
