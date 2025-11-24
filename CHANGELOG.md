@@ -187,3 +187,10 @@ ffaba9d0b59c8d23d932a4d418f5e8ef5e3cd6e0 feat(domain): migrate payment ids to 64
 
 - **Security**: Identified cleartext legacy PID vulnerability and planned migration to encrypted 64-bit Integrated Addresses (ShortTerm-25).
 - **Documentation**: Added `docs/security/payment-id-security.md` proving the safety of 64-bit PIDs against brute-force attacks.
+
+4202ce8fe06614c3ea7dfbe97f45c3918f48b5a1 feat(monero): add wasm-safe integrated addresses and monero-rpc
+
+- **Deps & WASM**: Upgraded workspace to `monero 0.21`, `monero-rpc 0.5`, `getrandom 0.3`, and added `cfg-if`, with target-specific `wasm32` gating (`wasm_js`) to keep PaymentId generation browser-safe.
+- **Domain API**: Introduced `integrated_address` module exposing `build_integrated_address`/`decode_integrated_address` helpers on top of monero types for FFI/wasm usage; added cfg_if-backed randomness shim and unit tests.
+- **Monitor RPC**: Replaced hand-rolled JSON structs with `monero_rpc::WalletClient` + `GotTransfer` mapping, preserving `TransferEntry` shape, guarding amount overflow, and decoding 64-bit payment IDs; updated tests accordingly.
+- **Tracking**: Added ShortTerm-26/27 tasks to TODO for monero adoption and wasm gating; ran `cargo fmt --all`, `cargo clippy --workspace --all-features -- -D warnings`, and `cargo test --all --all-features`.
