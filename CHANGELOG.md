@@ -224,6 +224,13 @@ e6c663e76c33880ad4cd7e510a50da0f19038359 feat(domain): add wasm feature flag and
 - **Stability**: `BootstrapConfig` now trims whitespace before parsing `MONITOR_MIN_PAYMENT_AMOUNT` and `MONITOR_POLL_INTERVAL_SECS`, preventing env whitespace from breaking number parsing.
 - **Tests**: `set_env()` clears `MONITOR_POLL_INTERVAL_SECS` so config tests stay deterministic when developers export the var locally.
 - **Verification**: Ran `cargo fmt --all`, `cargo clippy --workspace --all-features -- -D warnings`, and `cargo test --all --all-features`.
+
+4bc4676f9e0b0cc1b21f1c20fd3f88c92f2a7cce fix(api): restrict revoke endpoint to internal listener
+
+- **Access Control**: Moved `POST /api/v1/token/{token}/revoke` off the public listener and onto the internal listener in `application.rs`; public requests now 404 unless an internal socket/port is configured.
+- **Tests**: Added integration coverage to assert public 404 vs internal 200 and to confirm the token status reflects revocation.
+- **Docs**: Updated README (and local zh mirror) to document the internal-only revoke route; checked off ShortTerm-29 in TODOs.
+- **Verification**: Ran `cargo fmt --all`, `cargo clippy --workspace --all-features -- -D warnings`, and `cargo test --all --all-features`.
 5ef6236... chore(todo): plan api security hardening
 
 - Planned **ShortTerm-29** to move the privileged `revoke` endpoint to the internal listener, preventing unauthorized access from the public internet.
