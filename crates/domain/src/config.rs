@@ -82,19 +82,25 @@ impl BootstrapConfig {
                 })?;
         let monitor_min_payment_amount = get_optional_var("MONITOR_MIN_PAYMENT_AMOUNT")
             .map(|value| {
-                value.parse().map_err(|source| ConfigError::InvalidNumber {
-                    key: "MONITOR_MIN_PAYMENT_AMOUNT",
-                    source,
-                })
+                value
+                    .trim()
+                    .parse()
+                    .map_err(|source| ConfigError::InvalidNumber {
+                        key: "MONITOR_MIN_PAYMENT_AMOUNT",
+                        source,
+                    })
             })
             .transpose()? // propagate parse errors
             .unwrap_or(DEFAULT_MIN_PAYMENT_AMOUNT);
         let monitor_poll_interval_secs = get_optional_var("MONITOR_POLL_INTERVAL_SECS")
             .map(|value| {
-                value.parse().map_err(|source| ConfigError::InvalidNumber {
-                    key: "MONITOR_POLL_INTERVAL_SECS",
-                    source,
-                })
+                value
+                    .trim()
+                    .parse()
+                    .map_err(|source| ConfigError::InvalidNumber {
+                        key: "MONITOR_POLL_INTERVAL_SECS",
+                        source,
+                    })
             })
             .transpose()? // propagate parse errors
             .unwrap_or(DEFAULT_MONITOR_POLL_INTERVAL_SECS);
@@ -184,6 +190,7 @@ mod tests {
         std::env::set_var("MONERO_RPC_URL", "http://localhost:18082/json_rpc");
         std::env::set_var("MONITOR_START_HEIGHT", "42");
         std::env::remove_var("MONITOR_MIN_PAYMENT_AMOUNT");
+        std::env::remove_var("MONITOR_POLL_INTERVAL_SECS");
     }
 
     #[test]
