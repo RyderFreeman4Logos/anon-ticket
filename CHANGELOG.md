@@ -234,3 +234,6 @@ e6c663e76c33880ad4cd7e510a50da0f19038359 feat(domain): add wasm feature flag and
 5ef6236... chore(todo): plan api security hardening
 
 - Planned **ShortTerm-29** to move the privileged `revoke` endpoint to the internal listener, preventing unauthorized access from the public internet.
+f09beac... chore(todo): plan monitor confirmation safety
+
+- Planned **ShortTerm-30** to enforce confirmation depth in the monitor loop, preventing reorg attacks by ignoring immature transactions.
