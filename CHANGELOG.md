@@ -224,3 +224,6 @@ e6c663e76c33880ad4cd7e510a50da0f19038359 feat(domain): add wasm feature flag and
 - **Stability**: `BootstrapConfig` now trims whitespace before parsing `MONITOR_MIN_PAYMENT_AMOUNT` and `MONITOR_POLL_INTERVAL_SECS`, preventing env whitespace from breaking number parsing.
 - **Tests**: `set_env()` clears `MONITOR_POLL_INTERVAL_SECS` so config tests stay deterministic when developers export the var locally.
 - **Verification**: Ran `cargo fmt --all`, `cargo clippy --workspace --all-features -- -D warnings`, and `cargo test --all --all-features`.
+5ef6236... chore(todo): plan api security hardening
+
+- Planned **ShortTerm-29** to move the privileged `revoke` endpoint to the internal listener, preventing unauthorized access from the public internet.
