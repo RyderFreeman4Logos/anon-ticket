@@ -211,3 +211,10 @@ e6c663e76c33880ad4cd7e510a50da0f19038359 feat(domain): add wasm feature flag and
 0040f85... docs(storage): reflect 8-byte PID in design docs
 
 - Updated `DESIGN.md` and `README.md` to accurately describe the 8-byte Compact PID schema.
+
+4c84cab5c410c624f4e714833f2ba0009488dd40 feat(monitor): make poll interval configurable
+
+- **Config**: Added `MONITOR_POLL_INTERVAL_SECS` to `BootstrapConfig` with a 5s default and tests covering default and override cases.
+- **Worker**: `run_monitor` now sleeps using the configurable interval instead of a hardcoded 5s.
+- **Docs**: Updated monitor README with the new env var plus a Metrics & Observability section; root READMEs list the optional knobs; TODOs marked ShortTerm-28 done.
+- **Verification**: Ran `cargo fmt --all`, `cargo clippy --workspace --all-features -- -D warnings`, and `cargo test --all --all-features`.
