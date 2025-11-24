@@ -15,7 +15,7 @@ use tokio::time::sleep;
 
 use crate::handlers::{
     redeem::{redeem_handler, RedeemRequest, RedeemResponse, PID_CACHE_NEGATIVE_GRACE},
-    token::{revoke_token_handler, token_status_handler, RevokeRequest},
+    token::{revoke_token_handler, token_status_handler, RevokeRequest, TokenStatusResponse},
 };
 use crate::state::AppState;
 
@@ -316,33 +316,58 @@ async fn token_status_returns_active() {
 }
 
 #[actix_web::test]
-async fn revoke_token_marks_revoked() {
+async fn revoke_token_is_internal_only_and_revokes() {
     let storage = storage().await;
     let token = insert_token(&storage).await;
-    let app = test::init_service(
+    let state = with_cache(storage);
+
+    let public_app = test::init_service(
         App::new()
-            .app_data(web::Data::new(with_cache(storage)))
-            .route("/api/v1/token/{token}", web::get().to(token_status_handler))
-            .route(
-                "/api/v1/token/{token}/revoke",
-                web::post().to(revoke_token_handler),
-            ),
+            .app_data(web::Data::new(state.clone()))
+            .route("/api/v1/token/{token}", web::get().to(token_status_handler)),
     )
     .await;
 
-    let req = test::TestRequest::post()
-        .uri(&format!("/api/v1/token/{}/revoke", token.to_hex()))
-        .set_json(&RevokeRequest {
-            reason: Some("abuse".into()),
-            abuse_score: Some(5),
-        })
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
+    let internal_app = test::init_service(App::new().app_data(web::Data::new(state)).route(
+        "/api/v1/token/{token}/revoke",
+        web::post().to(revoke_token_handler),
+    ))
+    .await;
 
-    let req = test::TestRequest::get()
-        .uri(&format!("/api/v1/token/{}", token.to_hex()))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
+    let revoke_body = RevokeRequest {
+        reason: Some("abuse".into()),
+        abuse_score: Some(5),
+    };
+
+    let public_resp = test::call_service(
+        &public_app,
+        test::TestRequest::post()
+            .uri(&format!("/api/v1/token/{}/revoke", token.to_hex()))
+            .set_json(&revoke_body)
+            .to_request(),
+    )
+    .await;
+    assert_eq!(public_resp.status(), actix_web::http::StatusCode::NOT_FOUND);
+
+    let internal_resp = test::call_service(
+        &internal_app,
+        test::TestRequest::post()
+            .uri(&format!("/api/v1/token/{}/revoke", token.to_hex()))
+            .set_json(&revoke_body)
+            .to_request(),
+    )
+    .await;
+    assert_eq!(internal_resp.status(), actix_web::http::StatusCode::OK);
+
+    let status_resp = test::call_service(
+        &public_app,
+        test::TestRequest::get()
+            .uri(&format!("/api/v1/token/{}", token.to_hex()))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(status_resp.status(), actix_web::http::StatusCode::OK);
+    let parsed: TokenStatusResponse =
+        serde_json::from_slice(&to_bytes(status_resp.into_body()).await.unwrap()).unwrap();
+    assert_eq!(parsed.status, "revoked");
 }

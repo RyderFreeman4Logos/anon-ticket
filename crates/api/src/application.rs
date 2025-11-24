@@ -32,11 +32,7 @@ pub async fn run() -> Result<(), BootstrapError> {
             .app_data(web::Data::new(public_state.clone()))
             .wrap(Logger::default())
             .route("/api/v1/redeem", web::post().to(redeem_handler))
-            .route("/api/v1/token/{token}", web::get().to(token_status_handler))
-            .route(
-                "/api/v1/token/{token}/revoke",
-                web::post().to(revoke_token_handler),
-            );
+            .route("/api/v1/token/{token}", web::get().to(token_status_handler));
 
         if include_metrics_on_public {
             app = app.route("/metrics", web::get().to(metrics_handler));
@@ -74,6 +70,10 @@ pub async fn run() -> Result<(), BootstrapError> {
                 .app_data(web::Data::new(internal_state.clone()))
                 .wrap(Logger::default())
                 .route("/metrics", web::get().to(metrics_handler))
+                .route(
+                    "/api/v1/token/{token}/revoke",
+                    web::post().to(revoke_token_handler),
+                )
         });
 
         #[cfg(unix)]

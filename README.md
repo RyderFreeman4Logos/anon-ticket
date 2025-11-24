@@ -141,18 +141,20 @@ that logs suspicious PID probes.
 ### Internal API Listener
 
 Set `API_INTERNAL_BIND_ADDRESS` or `API_INTERNAL_UNIX_SOCKET` to expose
-internal-only routes (currently `/metrics`) on a dedicated TCP port or Unix
-socket. This keeps operational/administrative endpoints away from Tor-exposed
-listeners while still allowing the public API to operate over TCP or UDS. If
-no internal listener is configured, `/metrics` remains available on the public
-listener for backward compatibility.
+internal-only routes (currently `/metrics` and `POST /api/v1/token/{token}/revoke`)
+on a dedicated TCP port or Unix socket. This keeps operational/administrative
+endpoints away from Tor-exposed listeners while still allowing the public API to
+operate over TCP or UDS. If no internal listener is configured, `/metrics`
+remains available on the public listener for backward compatibility, while the
+revoke endpoint is disabled (public requests return 404).
 
 ### Token Introspection & Revocation
 
 - `GET /api/v1/token/{token}` – returns the token status (`active`/`revoked`),
   amount, `issued_at`, optional `revoked_at`, and `abuse_score`.
-- `POST /api/v1/token/{token}/revoke` – accepts `{ "reason": "...", "abuse_score": 5 }`
-  to mark a service token as revoked; subsequent lookups report `revoked`.
+- `POST /api/v1/token/{token}/revoke` – internal listener only; accepts
+  `{ "reason": "...", "abuse_score": 5 }` to mark a service token as revoked.
+  Public listeners return 404 for this route.
 
 ### PID Cache
 

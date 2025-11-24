@@ -9,7 +9,7 @@ use crate::state::AppState;
 
 use super::ApiError;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct TokenStatusResponse {
     pub status: String,
     pub amount: i64,
