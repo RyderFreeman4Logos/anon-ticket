@@ -20,3 +20,8 @@ metrics-exporter-prometheus.workspace = true
 once_cell.workspace = true
 moka.workspace = true
 getrandom.workspace = true
+cfg-if.workspace = true
+monero.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { workspace = true, features = ["wasm_js"] }

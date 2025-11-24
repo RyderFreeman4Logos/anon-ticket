@@ -6,11 +6,13 @@
 //! modules directly or rely on the curated re-exports below.
 
 pub mod config;
+pub mod integrated_address;
 pub mod model;
 pub mod services;
 pub mod storage;
 
 pub use config::{ApiConfig, BootstrapConfig, ConfigError};
+pub use integrated_address::*;
 pub use model::*;
 pub use services::cache::*;
 pub use services::telemetry::*;

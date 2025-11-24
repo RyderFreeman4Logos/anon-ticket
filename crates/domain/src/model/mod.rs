@@ -1,7 +1,8 @@
 //! Data structures and helpers shared across the API and monitor binaries.
 
+use cfg_if::cfg_if;
 use chrono::{DateTime, Utc};
-use getrandom::getrandom;
+use getrandom::fill;
 use hex::{decode as hex_decode, encode as hex_encode, FromHexError};
 use sha3::{Digest, Sha3_256};
 use thiserror::Error;
@@ -71,6 +72,18 @@ fn decode_pid_hex(pid: &str) -> Result<[u8; 8], PidFormatError> {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PaymentId([u8; 8]);
 
+cfg_if! {
+    if #[cfg(target_arch = "wasm32")] {
+        fn fill_pid_bytes(bytes: &mut [u8; 8]) -> Result<(), getrandom::Error> {
+            fill(bytes)
+        }
+    } else {
+        fn fill_pid_bytes(bytes: &mut [u8; 8]) -> Result<(), getrandom::Error> {
+            fill(bytes)
+        }
+    }
+}
+
 impl PaymentId {
     pub(crate) fn new(hex: impl AsRef<str>) -> Self {
         let bytes = decode_pid_hex(hex.as_ref()).expect("caller validated pid hex");
@@ -84,7 +97,7 @@ impl PaymentId {
 
     pub fn generate() -> Result<Self, getrandom::Error> {
         let mut bytes = [0u8; 8];
-        getrandom(&mut bytes)?;
+        fill_pid_bytes(&mut bytes)?;
         Ok(Self(bytes))
     }
 

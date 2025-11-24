@@ -28,12 +28,6 @@ pub enum MonitorError {
     Telemetry(#[from] TelemetryError),
 }
 
-impl From<reqwest::Error> for MonitorError {
-    fn from(value: reqwest::Error) -> Self {
-        Self::Rpc(value.to_string())
-    }
-}
-
 pub async fn run_monitor<S, D>(
     config: anon_ticket_domain::config::BootstrapConfig,
     storage: D,
