@@ -237,3 +237,10 @@ e6c663e76c33880ad4cd7e510a50da0f19038359 feat(domain): add wasm feature flag and
 f09beac... chore(todo): plan monitor confirmation safety
 
 - Planned **ShortTerm-30** to enforce confirmation depth in the monitor loop, preventing reorg attacks by ignoring immature transactions.
+
+958e406 feat(monitor): enforce confirmation window
+
+- Added `MONITOR_MIN_CONFIRMATIONS` (default `10`) to `BootstrapConfig`, trimming and testing overrides so deployments can bound reorg risk without recompiling.
+- Refactored the monitor loop to compute `safe_height = wallet_height - min_confirmations`, skip polling when the cursor is ahead of the safety window, clamp transfer fetches to an inclusive `[start, safe_height]` range, and persist the cursor no further than `safe_height + 1`.
+- Updated `TransferSource` to accept a max height, refreshed monitor docs/README and design notes, and checked off ShortTerm-30 in TODO.
+- Added unit tests covering confirmation gating and height advancement, plus config coverage; verified via `cargo fmt --all`, `cargo clippy --workspace --all-features -- -D warnings`, and `cargo test --all --all-features`.
