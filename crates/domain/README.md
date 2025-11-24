@@ -36,3 +36,9 @@ This crate is consumed by:
 This crate enforces a **"Parse, Don't Validate"** approach. By wrapping primitives in newtypes (e.g., `PaymentId`), we ensure that it is impossible for downstream code to represent or pass around invalid data. If you hold a `PaymentId`, it is guaranteed to be valid.
 
 For a deeper dive into the design decisions, see [DESIGN.md](./DESIGN.md).
+
+## 🌐 WASM Usage
+
+- Build: `cargo build -p anon_ticket_domain --target wasm32-unknown-unknown --features wasm`
+- What it enables: the `wasm` feature turns on `getrandom/js` so `PaymentId::generate` works in browsers/workers.
+- Exporting helpers: `integrated_address::{build_integrated_address, decode_integrated_address}` are string-based and FFI-friendly for wasm-bindgen/wasm-pack bindings.

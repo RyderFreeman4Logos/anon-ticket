@@ -192,6 +192,16 @@ ffaba9d0b59c8d23d932a4d418f5e8ef5e3cd6e0 feat(domain): migrate payment ids to 64
 
 - Checked off ShortTerm-26 after landing monero 0.21/monero-rpc 0.5 adoption, integrated-address helper, and monitor RPC refactor; TODO now focuses on finishing WASM guard (ShortTerm-27).
 
+d5a7746d5e21d16849655a176ebf37dc8f8386bb chore(changelog): log todo completion
+
+- Documented the ShortTerm-26 completion in the changelog after updating TODO.
+
+Unreleased chore(domain): finalize wasm guard for integrated addresses
+
+- Added a domain-only `wasm` feature enabling `getrandom/js` for wasm32 builds and documented the build command `cargo build -p anon_ticket_domain --target wasm32-unknown-unknown --features wasm`.
+- Updated `crates/domain/README.md` with WASM usage notes; mirrored in `README.zh.md` (ignored by git).
+- Marked ShortTerm-27 as completed in TODOs; domain remains the only crate with wasm support.
+
 4202ce8fe06614c3ea7dfbe97f45c3918f48b5a1 feat(monero): add wasm-safe integrated addresses and monero-rpc
 
 - **Deps & WASM**: Upgraded workspace to `monero 0.21`, `monero-rpc 0.5`, `getrandom 0.3`, and added `cfg-if`, with target-specific `wasm32` gating (`wasm_js`) to keep PaymentId generation browser-safe.
