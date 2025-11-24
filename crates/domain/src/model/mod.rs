@@ -34,7 +34,7 @@ pub fn derive_service_token(pid: &PaymentId, txid: &str) -> ServiceToken {
 }
 
 /// Required length (in hex characters) for externally supplied payment IDs.
-pub const PID_LENGTH: usize = 64;
+pub const PID_LENGTH: usize = 16;
 
 /// Errors emitted when user-supplied payment IDs fail validation.
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
@@ -45,7 +45,7 @@ pub enum PidFormatError {
     NonHex,
 }
 
-/// Validates that the supplied PID matches the 64 hex-character contract.
+/// Validates that the supplied PID matches the 16 hex-character contract.
 pub fn validate_pid(pid: &str) -> Result<(), PidFormatError> {
     if pid.len() != PID_LENGTH {
         return Err(PidFormatError::WrongLength);
@@ -58,18 +58,18 @@ pub fn validate_pid(pid: &str) -> Result<(), PidFormatError> {
     Ok(())
 }
 
-fn decode_pid_hex(pid: &str) -> Result<[u8; 32], PidFormatError> {
+fn decode_pid_hex(pid: &str) -> Result<[u8; 8], PidFormatError> {
     let bytes = hex_decode(pid).map_err(map_hex_error_to_pid)?;
-    if bytes.len() != 32 {
+    if bytes.len() != 8 {
         return Err(PidFormatError::WrongLength);
     }
-    let mut array = [0u8; 32];
+    let mut array = [0u8; 8];
     array.copy_from_slice(&bytes);
     Ok(array)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct PaymentId([u8; 32]);
+pub struct PaymentId([u8; 8]);
 
 impl PaymentId {
     pub(crate) fn new(hex: impl AsRef<str>) -> Self {
@@ -83,12 +83,12 @@ impl PaymentId {
     }
 
     pub fn generate() -> Result<Self, getrandom::Error> {
-        let mut bytes = [0u8; 32];
+        let mut bytes = [0u8; 8];
         getrandom(&mut bytes)?;
         Ok(Self(bytes))
     }
 
-    pub fn as_bytes(&self) -> &[u8; 32] {
+    pub fn as_bytes(&self) -> &[u8; 8] {
         &self.0
     }
 
@@ -100,7 +100,7 @@ impl PaymentId {
         self.to_hex()
     }
 
-    pub fn into_bytes(self) -> [u8; 32] {
+    pub fn into_bytes(self) -> [u8; 8] {
         self.0
     }
 }
@@ -117,10 +117,10 @@ impl TryFrom<Vec<u8>> for PaymentId {
     type Error = PidFormatError;
 
     fn try_from(value: Vec<u8>) -> Result<Self, Self::Error> {
-        if value.len() != 32 {
+        if value.len() != 8 {
             return Err(PidFormatError::WrongLength);
         }
-        let mut bytes = [0u8; 32];
+        let mut bytes = [0u8; 8];
         bytes.copy_from_slice(&value);
         Ok(Self(bytes))
     }
@@ -291,7 +291,7 @@ pub struct RevokeTokenRequest {
 #[cfg(test)]
 mod tests {
     use super::*;
-    const VALID_PID: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    const VALID_PID: &str = "0123456789abcdef";
 
     #[test]
     fn readiness_message_is_stable() {
@@ -327,12 +327,12 @@ mod tests {
 
     #[test]
     fn payment_id_canonicalizes_case() {
-        let uppercase = "ABCDEFAB".repeat(8);
+        let uppercase = "ABCDEFAB12345678";
         let pid = PaymentId::parse(&uppercase).unwrap();
-        assert_eq!(pid.to_hex(), "abcdefab".repeat(8));
+        assert_eq!(pid.to_hex(), "abcdefab12345678");
 
-        let raw = PaymentId::new("FEDCBA9876543210".repeat(4));
-        assert_eq!(raw.to_hex(), "fedcba9876543210".repeat(4));
+        let raw = PaymentId::new("FEDCBA9876543210");
+        assert_eq!(raw.to_hex(), "fedcba9876543210");
     }
 
     #[test]
@@ -349,7 +349,7 @@ mod tests {
         let token = derive_service_token(&pid, "tx1");
         assert_eq!(
             token.to_hex(),
-            "6f70c79989f0d39772b9f81cfed1463a80f59e5b085dc1907f5e1a7f12482d86"
+            "369e0f7c09124783e45fa6a6b7588733e362e2917f36fb7036f49284c1952fa9"
         );
     }
 

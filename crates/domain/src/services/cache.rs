@@ -30,8 +30,8 @@ pub trait PidCache: Send + Sync {
 
 #[derive(Debug)]
 pub struct InMemoryPidCache {
-    positives: Cache<[u8; 32], ()>,
-    negatives: Cache<[u8; 32], Instant>,
+    positives: Cache<[u8; 8], ()>,
+    negatives: Cache<[u8; 8], Instant>,
 }
 
 impl PidCache for InMemoryPidCache {
@@ -96,8 +96,7 @@ mod tests {
     #[test]
     fn marks_presence_and_absence() {
         let cache = InMemoryPidCache::default();
-        let pid =
-            PaymentId::new("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
+        let pid = PaymentId::new("0123456789abcdef");
         assert!(cache.might_contain(&pid));
         cache.mark_absent(&pid);
         assert!(!cache.might_contain(&pid));
@@ -109,8 +108,7 @@ mod tests {
     #[test]
     fn negatives_expire() {
         let cache = InMemoryPidCache::new(Duration::from_millis(10));
-        let pid =
-            PaymentId::new("fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210");
+        let pid = PaymentId::new("fedcba9876543210");
         cache.mark_absent(&pid);
         assert!(!cache.might_contain(&pid));
         std::thread::sleep(Duration::from_millis(15));

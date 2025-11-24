@@ -101,7 +101,7 @@ a handle that satisfies the domain traits.
 ## PID & Token Helpers
 
 The `anon_ticket_domain` crate exposes `validate_pid` / `PaymentId::parse` to
-enforce the security rule that every client-supplied PID is a 64-character hex
+enforce the security rule that every client-supplied PID is a 16-character hex
 string. Use `derive_service_token(pid, txid)` to deterministically derive the
 service token returned to clients; the helper hashes `pid|txid` with SHA3-256
 to avoid collisions if component lengths evolve.
@@ -113,7 +113,7 @@ to avoid collisions if component lengths evolve.
 ```
 POST /api/v1/redeem
 {
-  "pid": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+  "pid": "0123456789abcdef"
 }
 ```
 
@@ -125,7 +125,7 @@ Responses:
 - `200 OK` with `{ "status": "already_claimed", ... }` when the payment was
   previously claimed; the API re-derives the deterministic token and returns it so
   clients can safely retry after transient failures.
-- `400 Bad Request` if the PID is not a 64-char hex string.
+- `400 Bad Request` if the PID is not a 16-char hex string.
 - `404 Not Found` if the PID has never been observed.
 
 The server uses `ApiConfig` to load `DATABASE_URL` / `API_BIND_ADDRESS` before

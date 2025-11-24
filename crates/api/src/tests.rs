@@ -20,7 +20,7 @@ use crate::handlers::{
 use crate::state::AppState;
 
 fn test_pid() -> PaymentId {
-    PaymentId::parse("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef").unwrap()
+    PaymentId::parse("0123456789abcdef").unwrap()
 }
 
 async fn storage() -> SeaOrmStorage {

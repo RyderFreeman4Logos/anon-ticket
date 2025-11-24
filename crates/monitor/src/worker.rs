@@ -177,9 +177,7 @@ mod tests {
         let transfers = TransfersResponse {
             incoming: vec![crate::rpc::TransferEntry {
                 txid: "tx1".into(),
-                payment_id: Some(
-                    "1111111111111111111111111111111111111111111111111111111111111111".into(),
-                ),
+                payment_id: Some("1111111111111111".into()),
                 amount: 100,
                 height: Some(101),
                 timestamp: 0,

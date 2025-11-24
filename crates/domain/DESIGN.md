@@ -9,7 +9,7 @@ This document explores the design philosophy behind the domain layer, highlighti
 We reject "string typing." In privacy-critical systems, passing around raw `String` or `&str` is a liability. The domain crate uses the **Newtype Pattern** to turn validation rules into type constraints.
 
 ### The `PaymentId` Primitive
-A Payment ID (PID) isn't just a string; it's a 32-byte (64 hex character) identifier with high entropy.
+A Payment ID (PID) isn't just a string; it's an encrypted 8-byte (16 hex character) identifier with high entropy, optimized for on-chain privacy and compact storage.
 - **Parsing as Validation**: You cannot create a `PaymentId` without passing through `validate_pid`. This means if a function accepts a `PaymentId`, it is **mathematically impossible** for it to receive malformed data.
 - **Canonicalization**: PIDs are case-insensitive but stored canonically (lowercase). The type handles this normalization internally, so downstream logic never has to worry about `AbCd` vs `abcd` mismatches.
 

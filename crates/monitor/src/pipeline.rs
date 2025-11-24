@@ -94,9 +94,7 @@ mod tests {
             amount,
             height: Some(10),
             timestamp: 0,
-            payment_id: Some(
-                "1111111111111111111111111111111111111111111111111111111111111111".to_string(),
-            ),
+            payment_id: Some("1111111111111111".to_string()),
         }
     }
 
