@@ -175,3 +175,7 @@ e7be3447d3c09f5a8d57ba732a2d56e928f2f3b0 feat(monitor): drop dust payments below
 
 - Added `crates/monitor/secure-monero-rpc-deployment.md` detailing how to export view keys and run a watch-only `monero-wallet-rpc`.
 - Updated `README.md` to reference the secure deployment guide.
+7cd8db6... chore(security): plan integrated address migration
+
+- **Security**: Identified cleartext legacy PID vulnerability and planned migration to encrypted 64-bit Integrated Addresses (ShortTerm-25).
+- **Documentation**: Added `docs/security/payment-id-security.md` proving the safety of 64-bit PIDs against brute-force attacks.
