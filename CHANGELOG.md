@@ -208,3 +208,6 @@ e6c663e76c33880ad4cd7e510a50da0f19038359 feat(domain): add wasm feature flag and
 - **Domain API**: Introduced `integrated_address` module exposing `build_integrated_address`/`decode_integrated_address` helpers on top of monero types for FFI/wasm usage; added cfg_if-backed randomness shim and unit tests.
 - **Monitor RPC**: Replaced hand-rolled JSON structs with `monero_rpc::WalletClient` + `GotTransfer` mapping, preserving `TransferEntry` shape, guarding amount overflow, and decoding 64-bit payment IDs; updated tests accordingly.
 - **Tracking**: Added ShortTerm-26/27 tasks to TODO for monero adoption and wasm gating; ran `cargo fmt --all`, `cargo clippy --workspace --all-features -- -D warnings`, and `cargo test --all --all-features`.
+0040f85... docs(storage): reflect 8-byte PID in design docs
+
+- Updated `DESIGN.md` and `README.md` to accurately describe the 8-byte Compact PID schema.
