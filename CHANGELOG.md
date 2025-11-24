@@ -171,6 +171,14 @@ e7be3447d3c09f5a8d57ba732a2d56e928f2f3b0 feat(monitor): drop dust payments below
 - **Worker Wiring**: Propagated the threshold through `run_monitor`/`handle_batch` and expanded unit tests to cover dust filtering paths.
 - **Docs & Tracking**: Documented the new env var in `crates/monitor/README.md` and checked off ShortTerm-24 in `TODO.md`.
 - **Verification**: Ran `cargo fmt --all`, `cargo clippy --workspace --all-features -- -D warnings`, and `cargo test --all --all-features`.
+
+ffaba9d0b59c8d23d932a4d418f5e8ef5e3cd6e0 feat(domain): migrate payment ids to 64-bit blobs
+
+- **PID Contract**: Reframed `PaymentId` as an encrypted `[u8; 8]` (16-hex) payload, updating validation, parsing, canonicalization, and deterministic token derivation to the new width while keeping `ServiceToken` at 32 bytes.
+- **Storage**: Shrunk `payments.pid` and `service_tokens.pid` columns to `binary(8)` in migrations/entities and aligned SeaORM stores with the new byte-length conversions.
+- **Runtime Surfaces**: Refreshed API and monitor fixtures/tests to use 16-char PIDs, kept the existing lightweight RPC types (no monero crate migration yet), and ensured cache keys follow the compact PID length.
+- **Docs & Tracking**: Updated README PID guidance, domain design notes, and checked off ShortTerm-25 in TODO.
+- **Verification**: Ran `cargo fmt --all`, `cargo clippy --workspace --all-features -- -D warnings`, and `cargo test --all --all-features`.
 4c74338... docs(monitor): add watch-only wallet deployment guide
 
 - Added `crates/monitor/secure-monero-rpc-deployment.md` detailing how to export view keys and run a watch-only `monero-wallet-rpc`.
