@@ -196,7 +196,7 @@ d5a7746d5e21d16849655a176ebf37dc8f8386bb chore(changelog): log todo completion
 
 - Documented the ShortTerm-26 completion in the changelog after updating TODO.
 
-Unreleased chore(domain): finalize wasm guard for integrated addresses
+e6c663e76c33880ad4cd7e510a50da0f19038359 feat(domain): add wasm feature flag and docs
 
 - Added a domain-only `wasm` feature enabling `getrandom/js` for wasm32 builds and documented the build command `cargo build -p anon_ticket_domain --target wasm32-unknown-unknown --features wasm`.
 - Updated `crates/domain/README.md` with WASM usage notes; mirrored in `README.zh.md` (ignored by git).
