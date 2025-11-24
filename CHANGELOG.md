@@ -179,6 +179,8 @@ ffaba9d0b59c8d23d932a4d418f5e8ef5e3cd6e0 feat(domain): migrate payment ids to 64
 - **Runtime Surfaces**: Refreshed API and monitor fixtures/tests to use 16-char PIDs, kept the existing lightweight RPC types (no monero crate migration yet), and ensured cache keys follow the compact PID length.
 - **Docs & Tracking**: Updated README PID guidance, domain design notes, and checked off ShortTerm-25 in TODO.
 - **Verification**: Ran `cargo fmt --all`, `cargo clippy --workspace --all-features -- -D warnings`, and `cargo test --all --all-features`.
+
+TODO (open review item): Upgrading nodes with legacy PID data currently fails at read time because legacy rows store 64-hex (or 32-byte) PIDs; add explicit upgrade guard or migration guidance to avoid silent breakage when moving to 16-hex `[u8; 8]` PIDs.
 4c74338... docs(monitor): add watch-only wallet deployment guide
 
 - Added `crates/monitor/secure-monero-rpc-deployment.md` detailing how to export view keys and run a watch-only `monero-wallet-rpc`.

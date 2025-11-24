@@ -14,6 +14,16 @@ use crate::entity::payments::{self, PaymentStatusDb};
 use crate::errors::StorageError;
 use crate::SeaOrmStorage;
 
+fn pid_from_bytes(bytes: Vec<u8>) -> StorageResult<PaymentId> {
+    if bytes.len() == 8 {
+        return PaymentId::try_from(bytes).map_err(|err| StorageError::Database(err.to_string()));
+    }
+
+    Err(StorageError::Database(
+        "legacy payment id detected; please migrate database to 16-hex pid format".to_string(),
+    ))
+}
+
 #[async_trait::async_trait]
 impl PaymentStore for SeaOrmStorage {
     async fn insert_payment(&self, payment: NewPayment) -> StorageResult<()> {
@@ -95,8 +105,7 @@ impl PaymentStore for SeaOrmStorage {
 }
 
 fn payment_to_record(model: payments::Model) -> StorageResult<PaymentRecord> {
-    let pid =
-        PaymentId::try_from(model.pid).map_err(|err| StorageError::Database(err.to_string()))?;
+    let pid = pid_from_bytes(model.pid)?;
 
     Ok(PaymentRecord {
         txid: model.txid,

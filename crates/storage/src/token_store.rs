@@ -9,6 +9,16 @@ use crate::entity::service_tokens;
 use crate::errors::StorageError;
 use crate::SeaOrmStorage;
 
+fn pid_from_bytes(bytes: Vec<u8>) -> StorageResult<PaymentId> {
+    if bytes.len() == 8 {
+        return PaymentId::try_from(bytes).map_err(|err| StorageError::Database(err.to_string()));
+    }
+
+    Err(StorageError::Database(
+        "legacy payment id detected; please migrate database to 16-hex pid format".to_string(),
+    ))
+}
+
 #[async_trait::async_trait]
 impl TokenStore for SeaOrmStorage {
     async fn insert_token(&self, token: NewServiceToken) -> StorageResult<ServiceTokenRecord> {
@@ -68,8 +78,7 @@ impl TokenStore for SeaOrmStorage {
 }
 
 fn token_to_record(model: service_tokens::Model) -> StorageResult<ServiceTokenRecord> {
-    let pid =
-        PaymentId::try_from(model.pid).map_err(|err| StorageError::Database(err.to_string()))?;
+    let pid = pid_from_bytes(model.pid)?;
     let token = ServiceToken::try_from(model.token)
         .map_err(|err| StorageError::Database(err.to_string()))?;
 
