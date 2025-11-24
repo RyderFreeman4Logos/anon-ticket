@@ -61,10 +61,12 @@ pub struct BootstrapConfig {
     monitor_start_height: u64,
     monitor_min_payment_amount: i64,
     monitor_poll_interval_secs: u64,
+    monitor_min_confirmations: u64,
 }
 
 const DEFAULT_MIN_PAYMENT_AMOUNT: i64 = 1_000_000;
 const DEFAULT_MONITOR_POLL_INTERVAL_SECS: u64 = 5;
+const DEFAULT_MONITOR_MIN_CONFIRMATIONS: u64 = 10;
 
 impl BootstrapConfig {
     /// Loads configuration by reading the required process variables. Missing
@@ -104,6 +106,18 @@ impl BootstrapConfig {
             })
             .transpose()? // propagate parse errors
             .unwrap_or(DEFAULT_MONITOR_POLL_INTERVAL_SECS);
+        let monitor_min_confirmations = get_optional_var("MONITOR_MIN_CONFIRMATIONS")
+            .map(|value| {
+                value
+                    .trim()
+                    .parse()
+                    .map_err(|source| ConfigError::InvalidNumber {
+                        key: "MONITOR_MIN_CONFIRMATIONS",
+                        source,
+                    })
+            })
+            .transpose()? // propagate parse errors
+            .unwrap_or(DEFAULT_MONITOR_MIN_CONFIRMATIONS);
 
         Ok(Self {
             database_url,
@@ -111,6 +125,7 @@ impl BootstrapConfig {
             monitor_start_height,
             monitor_min_payment_amount,
             monitor_poll_interval_secs,
+            monitor_min_confirmations,
         })
     }
 
@@ -132,6 +147,10 @@ impl BootstrapConfig {
 
     pub fn monitor_poll_interval_secs(&self) -> u64 {
         self.monitor_poll_interval_secs
+    }
+
+    pub fn monitor_min_confirmations(&self) -> u64 {
+        self.monitor_min_confirmations
     }
 }
 
@@ -191,6 +210,7 @@ mod tests {
         std::env::set_var("MONITOR_START_HEIGHT", "42");
         std::env::remove_var("MONITOR_MIN_PAYMENT_AMOUNT");
         std::env::remove_var("MONITOR_POLL_INTERVAL_SECS");
+        std::env::remove_var("MONITOR_MIN_CONFIRMATIONS");
     }
 
     #[test]
@@ -278,6 +298,10 @@ mod tests {
             config.monitor_poll_interval_secs(),
             DEFAULT_MONITOR_POLL_INTERVAL_SECS
         );
+        assert_eq!(
+            config.monitor_min_confirmations(),
+            DEFAULT_MONITOR_MIN_CONFIRMATIONS
+        );
     }
 
     #[test]
@@ -300,6 +324,18 @@ mod tests {
 
         let config = BootstrapConfig::load_from_env().expect("config loads");
         assert_eq!(config.monitor_poll_interval_secs(), 10);
+
+        set_env();
+    }
+
+    #[test]
+    fn monitor_min_confirmations_overrides_default() {
+        let _guard = ENV_GUARD.lock().unwrap();
+        set_env();
+        std::env::set_var("MONITOR_MIN_CONFIRMATIONS", " 12 ");
+
+        let config = BootstrapConfig::load_from_env().expect("config loads");
+        assert_eq!(config.monitor_min_confirmations(), 12);
 
         set_env();
     }

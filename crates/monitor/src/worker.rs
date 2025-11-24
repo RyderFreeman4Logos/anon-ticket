@@ -42,41 +42,84 @@ where
         .await?
         .unwrap_or(config.monitor_start_height());
     let min_payment_amount = config.monitor_min_payment_amount();
+    let min_confirmations = config.monitor_min_confirmations();
     let poll_interval = Duration::from_secs(config.monitor_poll_interval_secs());
 
     loop {
-        match source.fetch_transfers(height).await {
-            Ok(transfers) => {
-                if let Err(err) = handle_batch(
-                    &storage,
-                    &source,
-                    transfers,
-                    &mut height,
-                    min_payment_amount,
-                )
-                .await
-                {
-                    warn!(?err, "batch processing failed, retrying in next cycle");
-                }
-            }
+        let wallet_height = match source.wallet_height().await {
+            Ok(height) => height,
             Err(err) => {
-                counter!("monitor_rpc_calls_total", 1, "result" => "error");
-                warn!(?err, "rpc fetch failed");
+                warn!(?err, "rpc height fetch failed");
+                sleep(poll_interval).await;
+                continue;
             }
+        };
+
+        let safe_height = wallet_height.saturating_sub(min_confirmations);
+
+        if height > safe_height {
+            // wait for more confirmations before progressing
+            sleep(poll_interval).await;
+            continue;
+        }
+
+        match monitor_tick(
+            &storage,
+            &source,
+            &mut height,
+            min_payment_amount,
+            safe_height,
+        )
+        .await
+        {
+            Ok(()) => {}
+            Err(err) => warn!(?err, "batch processing failed, retrying in next cycle"),
         }
         sleep(poll_interval).await;
     }
 }
 
-async fn handle_batch<S, D>(
+async fn monitor_tick<S, D>(
     storage: &D,
     source: &S,
-    transfers: TransfersResponse,
     current_height: &mut u64,
     min_payment_amount: i64,
+    safe_height: u64,
 ) -> Result<(), MonitorError>
 where
     S: TransferSource,
+    D: MonitorStateStore + PaymentStore,
+{
+    if *current_height > safe_height {
+        return Ok(());
+    }
+
+    let transfers = match source.fetch_transfers(*current_height, safe_height).await {
+        Ok(resp) => resp,
+        Err(err) => {
+            counter!("monitor_rpc_calls_total", 1, "result" => "error");
+            return Err(err);
+        }
+    };
+
+    handle_batch(
+        storage,
+        transfers,
+        current_height,
+        min_payment_amount,
+        safe_height,
+    )
+    .await
+}
+
+async fn handle_batch<D>(
+    storage: &D,
+    transfers: TransfersResponse,
+    current_height: &mut u64,
+    min_payment_amount: i64,
+    safe_height: u64,
+) -> Result<(), MonitorError>
+where
     D: MonitorStateStore + PaymentStore,
 {
     counter!("monitor_rpc_calls_total", 1, "result" => "ok");
@@ -92,12 +135,12 @@ where
         process_entry(storage, entry, min_payment_amount).await?;
     }
 
-    let mut next_height = *current_height;
-    if let Some(max_height) = observed_height {
-        next_height = max_height + 1;
-    } else if let Ok(chain_height) = source.wallet_height().await {
-        next_height = chain_height.max(next_height);
-    }
+    let mut next_height = if let Some(max_height) = observed_height {
+        max_height.saturating_add(1)
+    } else {
+        safe_height.saturating_add(1)
+    };
+    next_height = next_height.min(safe_height.saturating_add(1));
 
     storage.upsert_last_processed_height(next_height).await?;
     gauge!("monitor_last_height", next_height as f64);
@@ -145,28 +188,12 @@ mod tests {
         }
     }
 
-    struct MockSource;
-
-    #[async_trait]
-    impl TransferSource for MockSource {
-        async fn fetch_transfers(
-            &self,
-            _start_height: u64,
-        ) -> Result<TransfersResponse, MonitorError> {
-            Ok(TransfersResponse { incoming: vec![] })
-        }
-        async fn wallet_height(&self) -> Result<u64, MonitorError> {
-            Ok(100)
-        }
-    }
-
     #[tokio::test]
     async fn handle_batch_propagates_storage_error() {
         let should_fail = Arc::new(AtomicBool::new(true));
         let storage = MockStorage {
             should_fail: should_fail.clone(),
         };
-        let source = MockSource;
         let mut height = 100;
 
         let transfers = TransfersResponse {
@@ -180,12 +207,101 @@ mod tests {
         };
 
         // Should fail
-        let result = handle_batch(&storage, &source, transfers.clone(), &mut height, 1).await;
+        let result = handle_batch(&storage, transfers.clone(), &mut height, 1, 200).await;
         assert!(result.is_err());
 
         // Should succeed
         should_fail.store(false, Ordering::SeqCst);
-        let result = handle_batch(&storage, &source, transfers, &mut height, 1).await;
+        let result = handle_batch(&storage, transfers, &mut height, 1, 200).await;
         assert!(result.is_ok());
+    }
+
+    #[derive(Clone)]
+    struct RecordingSource {
+        fetch_called: Arc<AtomicBool>,
+    }
+
+    #[async_trait]
+    impl TransferSource for RecordingSource {
+        async fn fetch_transfers(
+            &self,
+            _start_height: u64,
+            _max_height: u64,
+        ) -> Result<TransfersResponse, MonitorError> {
+            self.fetch_called.store(true, Ordering::SeqCst);
+            Ok(TransfersResponse { incoming: vec![] })
+        }
+
+        async fn wallet_height(&self) -> Result<u64, MonitorError> {
+            Ok(50)
+        }
+    }
+
+    #[tokio::test]
+    async fn monitor_skips_when_height_above_safe_window() {
+        let storage = MockStorage {
+            should_fail: Arc::new(AtomicBool::new(false)),
+        };
+        let source = RecordingSource {
+            fetch_called: Arc::new(AtomicBool::new(false)),
+        };
+        let mut height = 60;
+        let safe_height = 40;
+
+        monitor_tick(&storage, &source, &mut height, 1, safe_height)
+            .await
+            .expect("tick succeeds");
+
+        // Should not call fetch because current height is beyond the safe window.
+        assert!(!source.fetch_called.load(Ordering::SeqCst));
+        // Cursor should remain unchanged.
+        assert_eq!(height, 60);
+    }
+
+    #[derive(Clone)]
+    struct PreparedSource {
+        transfers: Arc<Vec<crate::rpc::TransferEntry>>,
+    }
+
+    #[async_trait]
+    impl TransferSource for PreparedSource {
+        async fn fetch_transfers(
+            &self,
+            _start_height: u64,
+            _max_height: u64,
+        ) -> Result<TransfersResponse, MonitorError> {
+            Ok(TransfersResponse {
+                incoming: self.transfers.as_ref().clone(),
+            })
+        }
+
+        async fn wallet_height(&self) -> Result<u64, MonitorError> {
+            Ok(120)
+        }
+    }
+
+    #[tokio::test]
+    async fn monitor_advances_only_to_safe_height() {
+        let storage = MockStorage {
+            should_fail: Arc::new(AtomicBool::new(false)),
+        };
+        let transfers = vec![crate::rpc::TransferEntry {
+            txid: "tx1".into(),
+            payment_id: Some("1111111111111111".into()),
+            amount: 100,
+            height: Some(115),
+            timestamp: 0,
+        }];
+        let source = PreparedSource {
+            transfers: Arc::new(transfers),
+        };
+        let mut height = 110;
+        let safe_height = 115;
+
+        monitor_tick(&storage, &source, &mut height, 1, safe_height)
+            .await
+            .expect("tick succeeds");
+
+        assert_eq!(height, safe_height.saturating_add(1));
     }
 }

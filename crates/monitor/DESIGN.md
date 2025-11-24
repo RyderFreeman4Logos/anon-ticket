@@ -15,7 +15,7 @@ pub async fn run_monitor<S, D>(...) {
 
     loop {
         // 2. Fetch & Process
-        match source.fetch_transfers(height).await {
+        match source.fetch_transfers(height, safe_height).await {
             Ok(transfers) => {
                 if let Err(e) = handle_batch(..., transfers, &mut height).await {
                     warn!("batch failed, retrying: {}", e);
@@ -28,6 +28,8 @@ pub async fn run_monitor<S, D>(...) {
     }
 }
 ```
+
+`safe_height` is derived each loop as `wallet_height - MONITOR_MIN_CONFIRMATIONS`, so the monitor refuses to process zero-confirmation (or otherwise immature) transfers and only advances its cursor once blocks have aged past the configured safety window.
 
 ### Why Polling?
 1.  **Resilience**: If the monitor crashes, it simply restarts, reads the `last_processed_height` from SQLite, and resumes exactly where it left off. There are no "missed events" to replay.

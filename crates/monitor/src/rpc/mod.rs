@@ -14,7 +14,12 @@ pub use types::{TransferEntry, TransfersResponse};
 
 #[async_trait]
 pub trait TransferSource: Send + Sync {
-    async fn fetch_transfers(&self, start_height: u64) -> Result<TransfersResponse, MonitorError>;
+    /// Fetch transfers in the inclusive height range [`start_height`, `max_height`].
+    async fn fetch_transfers(
+        &self,
+        start_height: u64,
+        max_height: u64,
+    ) -> Result<TransfersResponse, MonitorError>;
     async fn wallet_height(&self) -> Result<u64, MonitorError>;
 }
 
@@ -30,7 +35,11 @@ impl RpcTransferSource {
 
 #[async_trait]
 impl TransferSource for RpcTransferSource {
-    async fn fetch_transfers(&self, start_height: u64) -> Result<TransfersResponse, MonitorError> {
+    async fn fetch_transfers(
+        &self,
+        start_height: u64,
+        max_height: u64,
+    ) -> Result<TransfersResponse, MonitorError> {
         let mut categories = HashMap::new();
         categories.insert(GetTransfersCategory::In, true);
 
@@ -40,7 +49,7 @@ impl TransferSource for RpcTransferSource {
             subaddr_indices: None,
             block_height_filter: Some(BlockHeightFilter {
                 min_height: Some(start_height),
-                max_height: None,
+                max_height: Some(max_height),
             }),
         };
 

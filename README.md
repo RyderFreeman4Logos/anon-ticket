@@ -69,9 +69,11 @@ so that the workspace builds end-to-end. Replace these stubs incrementally as th
    - `anon_ticket_api` requires `DATABASE_URL` and `API_BIND_ADDRESS`, plus
      optional `API_UNIX_SOCKET`/`API_INTERNAL_BIND_ADDRESS`/`API_INTERNAL_UNIX_SOCKET`.
    - `anon_ticket_monitor` requires `DATABASE_URL`, `MONERO_RPC_URL`,
-     and `MONITOR_START_HEIGHT` via `BootstrapConfig`; optional
-     `MONITOR_POLL_INTERVAL_SECS` (default `5`) and
-     `MONITOR_MIN_PAYMENT_AMOUNT` (default `1_000_000`) tune load shedding.
+    and `MONITOR_START_HEIGHT` via `BootstrapConfig`; optional
+    `MONITOR_POLL_INTERVAL_SECS` (default `5`),
+    `MONITOR_MIN_CONFIRMATIONS` (default `10`), and
+    `MONITOR_MIN_PAYMENT_AMOUNT` (default `1_000_000`) tune load shedding and
+    reorg safety.
    - Optional telemetry knobs (`<PREFIX>_LOG_FILTER`, `<PREFIX>_METRICS_ADDRESS`)
      tune tracing verbosity and Prometheus listeners without blocking startup.
 2. Store deployment-specific TOML/JSON secrets inside `config/` (see
@@ -195,8 +197,10 @@ monitor automatically exposes Prometheus metrics (RPC successes/failures, batch
 sizes, ingested payments) so ops can visualize sync progress.
 
 The binary tracks the last processed height in the storage layer so it can
-resume after restarts. Configure the RPC credentials to point at the wallet you
-use for receiving PID-based transfers.
+resume after restarts. It only ingests transfers at or below
+`wallet_height - MONITOR_MIN_CONFIRMATIONS` to avoid issuing tokens on blocks
+that could still be reorganized. Configure the RPC credentials to point at the
+wallet you use for receiving PID-based transfers.
 
 ### Watch-Only Wallet Deployment (Recommended)
 
