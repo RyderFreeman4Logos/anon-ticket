@@ -48,9 +48,10 @@ We rigorously minimize the storage footprint to maximize cache locality and IO t
 
 ### Binary Identifiers
 We reject `TEXT` affinity for cryptographic identifiers.
-- **PIDs & Tokens**: Defined as `BLOB` (SQLite) or `BYTEA` (Postgres) with a length of 32 bytes.
+- **PIDs**: Defined as `BLOB` (SQLite) or `BYTEA` (Postgres) with a length of 8 bytes (Compact ID).
+- **Tokens**: Defined as `BLOB` (SQLite) or `BYTEA` (Postgres) with a length of 32 bytes (SHA3-256).
 - **Rationale**:
-    - **Space Efficiency**: Storing raw bytes instead of Hex strings (64 bytes) cuts the index size in half. Smaller indexes mean more pages fit in RAM.
+    - **Space Efficiency**: Storing raw bytes cuts index size significantly. Smaller indexes mean more pages fit in RAM.
     - **Performance**: Avoids redundant Hex encoding/decoding cycles at the storage layer.
 
 ### TinyInt Status

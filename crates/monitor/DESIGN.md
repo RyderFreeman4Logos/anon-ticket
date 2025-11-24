@@ -54,7 +54,7 @@ To maintain compatibility with our embedded database strategy, we store amounts 
 ## Security & Robustness
 
 ### Input Sanitization
-The monitor treats the RPC response as untrusted input in one specific regard: **PIDs**. While we trust the node to report valid amounts and heights, the `payment_id` field is user-controlled data on the blockchain. We parse it into a hardened `[u8; 32]` type before it ever touches our domain logic.
+The monitor treats the RPC response as untrusted input in one specific regard: **PIDs**. While we trust the node to report valid amounts and heights, the `payment_id` field is user-controlled data on the blockchain. We parse it into a hardened `[u8; 8]` type (Compact Payment ID) before it ever touches our domain logic.
 
 ### Transient Failures
 Network glitches and database locks are inevitable. The worker loop wraps the batch processor in a `Result` block. If the database is temporarily locked (even with WAL mode) or the RPC times out, the monitor logs a warning and retries the *same* height in the next cycle. It never advances the cursor until persistence succeeds.

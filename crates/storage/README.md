@@ -5,7 +5,7 @@ The persistence layer for the anon-ticket workspace. This crate implements the s
 ## 🚀 Features
 
 - **SQLite First (Optimized)**: By default, this crate configures SQLite in **WAL Mode** with `synchronous=NORMAL`, transforming it from a embedded library into a high-concurrency transaction engine suitable for the "Single-Node Fortress" architecture.
-- **Compact Schema**: Stores identifiers as raw `BLOB`s (32 bytes) and status enums as `TINYINT`s (1 byte). This minimizes the on-disk footprint and maximizes page cache density compared to traditional string-heavy schemas.
+- **Compact Schema**: Stores identifiers as raw `BLOB`s (8 bytes for PIDs, 32 bytes for Tokens) and status enums as `TINYINT`s (1 byte). This minimizes the on-disk footprint and maximizes page cache density compared to traditional string-heavy schemas.
 - **Postgres Compatible**: Can be compiled with the `postgres` feature for deployments requiring remote storage.
 - **Atomic Operations**: Implements critical business logic (like `claim_payment`) using atomic `UPDATE ... RETURNING` queries to prevent race conditions without application-level locking.
 - **Migrations**: Built-in, idempotent schema migrations ensure the database is always in the correct state upon startup.
