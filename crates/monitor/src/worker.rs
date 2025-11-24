@@ -42,6 +42,7 @@ where
         .await?
         .unwrap_or(config.monitor_start_height());
     let min_payment_amount = config.monitor_min_payment_amount();
+    let poll_interval = Duration::from_secs(config.monitor_poll_interval_secs());
 
     loop {
         match source.fetch_transfers(height).await {
@@ -63,7 +64,7 @@ where
                 warn!(?err, "rpc fetch failed");
             }
         }
-        sleep(Duration::from_secs(5)).await;
+        sleep(poll_interval).await;
     }
 }
 

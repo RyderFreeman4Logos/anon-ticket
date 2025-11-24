@@ -69,7 +69,9 @@ so that the workspace builds end-to-end. Replace these stubs incrementally as th
    - `anon_ticket_api` requires `DATABASE_URL` and `API_BIND_ADDRESS`, plus
      optional `API_UNIX_SOCKET`/`API_INTERNAL_BIND_ADDRESS`/`API_INTERNAL_UNIX_SOCKET`.
    - `anon_ticket_monitor` requires `DATABASE_URL`, `MONERO_RPC_URL`,
-     and `MONITOR_START_HEIGHT` via `BootstrapConfig`.
+     and `MONITOR_START_HEIGHT` via `BootstrapConfig`; optional
+     `MONITOR_POLL_INTERVAL_SECS` (default `5`) and
+     `MONITOR_MIN_PAYMENT_AMOUNT` (default `1_000_000`) tune load shedding.
    - Optional telemetry knobs (`<PREFIX>_LOG_FILTER`, `<PREFIX>_METRICS_ADDRESS`)
      tune tracing verbosity and Prometheus listeners without blocking startup.
 2. Store deployment-specific TOML/JSON secrets inside `config/` (see

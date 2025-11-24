@@ -60,9 +60,11 @@ pub struct BootstrapConfig {
     monero_rpc_url: String,
     monitor_start_height: u64,
     monitor_min_payment_amount: i64,
+    monitor_poll_interval_secs: u64,
 }
 
 const DEFAULT_MIN_PAYMENT_AMOUNT: i64 = 1_000_000;
+const DEFAULT_MONITOR_POLL_INTERVAL_SECS: u64 = 5;
 
 impl BootstrapConfig {
     /// Loads configuration by reading the required process variables. Missing
@@ -87,12 +89,22 @@ impl BootstrapConfig {
             })
             .transpose()? // propagate parse errors
             .unwrap_or(DEFAULT_MIN_PAYMENT_AMOUNT);
+        let monitor_poll_interval_secs = get_optional_var("MONITOR_POLL_INTERVAL_SECS")
+            .map(|value| {
+                value.parse().map_err(|source| ConfigError::InvalidNumber {
+                    key: "MONITOR_POLL_INTERVAL_SECS",
+                    source,
+                })
+            })
+            .transpose()? // propagate parse errors
+            .unwrap_or(DEFAULT_MONITOR_POLL_INTERVAL_SECS);
 
         Ok(Self {
             database_url,
             monero_rpc_url,
             monitor_start_height,
             monitor_min_payment_amount,
+            monitor_poll_interval_secs,
         })
     }
 
@@ -110,6 +122,10 @@ impl BootstrapConfig {
 
     pub fn monitor_min_payment_amount(&self) -> i64 {
         self.monitor_min_payment_amount
+    }
+
+    pub fn monitor_poll_interval_secs(&self) -> u64 {
+        self.monitor_poll_interval_secs
     }
 }
 
@@ -251,6 +267,10 @@ mod tests {
             config.monitor_min_payment_amount(),
             DEFAULT_MIN_PAYMENT_AMOUNT
         );
+        assert_eq!(
+            config.monitor_poll_interval_secs(),
+            DEFAULT_MONITOR_POLL_INTERVAL_SECS
+        );
     }
 
     #[test]
@@ -261,6 +281,18 @@ mod tests {
 
         let config = BootstrapConfig::load_from_env().expect("config loads");
         assert_eq!(config.monitor_min_payment_amount(), 2_000_000);
+
+        set_env();
+    }
+
+    #[test]
+    fn monitor_poll_interval_overrides_default() {
+        let _guard = ENV_GUARD.lock().unwrap();
+        set_env();
+        std::env::set_var("MONITOR_POLL_INTERVAL_SECS", " 10 ");
+
+        let config = BootstrapConfig::load_from_env().expect("config loads");
+        assert_eq!(config.monitor_poll_interval_secs(), 10);
 
         set_env();
     }
