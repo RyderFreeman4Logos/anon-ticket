@@ -218,3 +218,9 @@ e6c663e76c33880ad4cd7e510a50da0f19038359 feat(domain): add wasm feature flag and
 - **Worker**: `run_monitor` now sleeps using the configurable interval instead of a hardcoded 5s.
 - **Docs**: Updated monitor README with the new env var plus a Metrics & Observability section; root READMEs list the optional knobs; TODOs marked ShortTerm-28 done.
 - **Verification**: Ran `cargo fmt --all`, `cargo clippy --workspace --all-features -- -D warnings`, and `cargo test --all --all-features`.
+
+8ac8819c4b330256035e500832f14a845d4e66ce fix(config): trim monitor env parsing
+
+- **Stability**: `BootstrapConfig` now trims whitespace before parsing `MONITOR_MIN_PAYMENT_AMOUNT` and `MONITOR_POLL_INTERVAL_SECS`, preventing env whitespace from breaking number parsing.
+- **Tests**: `set_env()` clears `MONITOR_POLL_INTERVAL_SECS` so config tests stay deterministic when developers export the var locally.
+- **Verification**: Ran `cargo fmt --all`, `cargo clippy --workspace --all-features -- -D warnings`, and `cargo test --all --all-features`.
