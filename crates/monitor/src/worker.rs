@@ -188,8 +188,9 @@ impl MonitorHooks {
 }
 
 pub fn build_rpc_source(url: &str) -> Result<crate::rpc::RpcTransferSource, MonitorError> {
+    let normalized = url.strip_suffix("/json_rpc").unwrap_or(url);
     let rpc_client = RpcClientBuilder::new()
-        .build(url.to_string())
+        .build(normalized.to_string())
         .map_err(|err| MonitorError::Rpc(err.to_string()))?;
     Ok(crate::rpc::RpcTransferSource::new(rpc_client.wallet()))
 }

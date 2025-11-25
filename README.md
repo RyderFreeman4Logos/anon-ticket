@@ -237,10 +237,11 @@ deployment is:
    watch-only --password "" --daemon-address <daemon> --rpc-bind-port 18082 \
    --confirm-external-bind --disable-rpc-login`. The `--disable-rpc-login`
    flag ensures the monitor can talk to the RPC without HTTP authentication.
-4. **Wire environment variables.** Set `MONERO_RPC_URL` (for example
-   `http://127.0.0.1:18082/json_rpc`) and `MONITOR_START_HEIGHT` to the block
-   height where you want ingestion to begin. All other `.env` entries stay the
-   same regardless of whether you run mainnet, stagenet, or testnet.
+4. **Wire environment variables.** Set `MONERO_RPC_URL` to the wallet RPC base
+   (e.g. `http://127.0.0.1:18082`; we append `/json_rpc` internally) and
+   `MONITOR_START_HEIGHT` to the block height where you want ingestion to begin.
+   All other `.env` entries stay the same regardless of whether you run
+   mainnet, stagenet, or testnet.
 
 For a Trezor-focused walkthrough, see
 [`crates/monitor/secure-monero-rpc-deployment.md`](crates/monitor/secure-monero-rpc-deployment.md).
