@@ -10,6 +10,7 @@ publish = false
 [dependencies]
 actix-web.workspace = true
 anon_ticket_domain = { path = "../domain" }
+anon_ticket_monitor = { path = "../monitor" }
 anon_ticket_storage = { path = "../storage" }
 serde.workspace = true
 serde_json.workspace = true

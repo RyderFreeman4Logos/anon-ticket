@@ -5,12 +5,13 @@ use metrics::counter;
 use tracing::warn;
 
 use crate::rpc::TransferEntry;
-use crate::worker::MonitorError;
+use crate::worker::{MonitorError, MonitorHooks};
 
 pub async fn process_entry<S>(
     storage: &S,
     entry: &TransferEntry,
     min_payment_amount: i64,
+    hooks: Option<&MonitorHooks>,
 ) -> Result<bool, MonitorError>
 where
     S: PaymentStore,
@@ -46,13 +47,16 @@ where
 
     storage
         .insert_payment(NewPayment {
-            pid,
+            pid: pid.clone(),
             txid: entry.txid.clone(),
             amount: entry.amount,
             block_height: height,
             detected_at,
         })
         .await?;
+    if let Some(hooks) = hooks {
+        hooks.mark_present(&pid);
+    }
     counter!("monitor_payments_ingested_total", 1, "result" => "persisted");
 
     Ok(true)
@@ -103,7 +107,7 @@ mod tests {
         let storage = MockStorage::default();
         let min_payment_amount = 10;
 
-        let result = process_entry(&storage, &sample_entry(5), min_payment_amount)
+        let result = process_entry(&storage, &sample_entry(5), min_payment_amount, None)
             .await
             .expect("processing succeeds");
 
@@ -116,7 +120,7 @@ mod tests {
         let storage = MockStorage::default();
         let min_payment_amount = 10;
 
-        let result = process_entry(&storage, &sample_entry(10), min_payment_amount)
+        let result = process_entry(&storage, &sample_entry(10), min_payment_amount, None)
             .await
             .expect("processing succeeds");
 

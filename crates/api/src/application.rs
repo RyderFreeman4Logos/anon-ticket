@@ -1,16 +1,23 @@
-use std::{path::Path, sync::Arc, time::Duration};
+use std::{
+    path::Path,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 #[cfg(unix)]
 use std::fs;
 
 use actix_web::{middleware::Logger, web, App, HttpServer};
-use anon_ticket_domain::config::{ApiConfig, ConfigError};
+use anon_ticket_domain::config::{ApiConfig, BootstrapConfig, ConfigError};
 use anon_ticket_domain::services::{
     cache::{BloomConfigError, InMemoryPidCache, PidBloom},
     telemetry::{init_telemetry, TelemetryConfig, TelemetryError},
 };
+use anon_ticket_domain::PidCache;
+use anon_ticket_monitor::{build_rpc_source, run_monitor, worker::MonitorHooks};
 use anon_ticket_storage::SeaOrmStorage;
 use thiserror::Error;
+use tracing::{info, warn};
 
 use crate::{
     handlers::{metrics_handler, redeem_handler, revoke_token_handler, token_status_handler},
@@ -22,20 +29,21 @@ const DEFAULT_PID_BLOOM_ENTRIES: u64 = 100_000;
 const DEFAULT_PID_BLOOM_FP_RATE: f64 = 0.01;
 
 pub async fn run() -> Result<(), BootstrapError> {
-    let config = ApiConfig::load_from_env()?;
+    let api_config = ApiConfig::load_from_env()?;
+    let monitor_config = maybe_load_monitor_config()?;
     let telemetry_config = TelemetryConfig::from_env("API");
     let telemetry = init_telemetry(&telemetry_config)?;
-    let storage = SeaOrmStorage::connect(config.database_url()).await?;
+    let storage = SeaOrmStorage::connect(api_config.database_url()).await?;
     let cache_ttl = Duration::from_secs(
-        config
+        api_config
             .pid_cache_ttl_secs()
             .unwrap_or_else(|| InMemoryPidCache::DEFAULT_TTL.as_secs()),
     );
-    let cache_capacity = config
+    let cache_capacity = api_config
         .pid_cache_capacity()
         .unwrap_or(InMemoryPidCache::DEFAULT_CAPACITY);
     let negative_grace = Duration::from_millis(
-        config
+        api_config
             .pid_cache_negative_grace_ms()
             .unwrap_or(DEFAULT_PID_CACHE_NEGATIVE_GRACE_MS),
     );
@@ -46,16 +54,33 @@ pub async fn run() -> Result<(), BootstrapError> {
         ));
     }
     let cache = Arc::new(InMemoryPidCache::with_capacity(cache_ttl, cache_capacity));
-    let bloom = build_bloom_filter(config.pid_bloom_entries(), config.pid_bloom_fp_rate())?;
-    let state = AppState::new(
-        storage,
-        cache,
-        telemetry.clone(),
-        negative_grace,
-        bloom.map(Arc::new),
+    let bloom = build_bloom_filter(
+        api_config.pid_bloom_entries(),
+        api_config.pid_bloom_fp_rate(),
+    )?
+    .map(Arc::new);
+
+    prewarm_hints(&storage, &cache, bloom.as_deref()).await?;
+
+    let monitor_hooks = MonitorHooks::new(
+        Some(cache.clone() as Arc<dyn anon_ticket_domain::PidCache>),
+        bloom.clone(),
     );
 
-    let include_metrics_on_public = !config.has_internal_listener();
+    let monitor_task = if let Some(cfg) = monitor_config {
+        let storage_clone = storage.clone();
+        let hooks = monitor_hooks.clone();
+        let source = build_rpc_source(cfg.monero_rpc_url())?;
+        Some(tokio::spawn(async move {
+            run_monitor(cfg, storage_clone, source, Some(hooks)).await
+        }))
+    } else {
+        None
+    };
+
+    let state = AppState::new(storage, cache, telemetry.clone(), negative_grace, bloom);
+
+    let include_metrics_on_public = !api_config.has_internal_listener();
     let public_state = state.clone();
     let mut public_server = HttpServer::new(move || {
         let mut app = App::new()
@@ -73,27 +98,27 @@ pub async fn run() -> Result<(), BootstrapError> {
 
     #[cfg(unix)]
     {
-        if let Some(socket) = config.api_unix_socket() {
+        if let Some(socket) = api_config.api_unix_socket() {
             cleanup_socket(socket)?;
             public_server = public_server.bind_uds(socket)?;
         } else {
-            public_server = public_server.bind(config.api_bind_address())?;
+            public_server = public_server.bind(api_config.api_bind_address())?;
         }
     }
 
     #[cfg(not(unix))]
     {
-        if let Some(socket) = config.api_unix_socket() {
+        if let Some(socket) = api_config.api_unix_socket() {
             return Err(BootstrapError::Io(std::io::Error::other(format!(
                 "unix socket '{socket}' requested but this platform does not support it"
             ))));
         }
-        public_server = public_server.bind(config.api_bind_address())?;
+        public_server = public_server.bind(api_config.api_bind_address())?;
     }
 
     let public_server = public_server.run();
 
-    let internal_server = if config.has_internal_listener() {
+    let internal_server = if api_config.has_internal_listener() {
         let internal_state = state.clone();
         let mut internal_server = HttpServer::new(move || {
             App::new()
@@ -108,10 +133,10 @@ pub async fn run() -> Result<(), BootstrapError> {
 
         #[cfg(unix)]
         {
-            if let Some(socket) = config.internal_unix_socket() {
+            if let Some(socket) = api_config.internal_unix_socket() {
                 cleanup_socket(socket)?;
                 internal_server = internal_server.bind_uds(socket)?;
-            } else if let Some(addr) = config.internal_bind_address() {
+            } else if let Some(addr) = api_config.internal_bind_address() {
                 internal_server = internal_server.bind(addr)?;
             } else {
                 return Err(BootstrapError::Io(std::io::Error::other(
@@ -122,12 +147,12 @@ pub async fn run() -> Result<(), BootstrapError> {
 
         #[cfg(not(unix))]
         {
-            if let Some(socket) = config.internal_unix_socket() {
+            if let Some(socket) = api_config.internal_unix_socket() {
                 return Err(BootstrapError::Io(std::io::Error::other(format!(
                     "internal unix socket '{socket}' requested but this platform does not support it"
                 ))));
             }
-            if let Some(addr) = config.internal_bind_address() {
+            if let Some(addr) = api_config.internal_bind_address() {
                 internal_server = internal_server.bind(addr)?;
             } else {
                 return Err(BootstrapError::Io(std::io::Error::other(
@@ -142,7 +167,23 @@ pub async fn run() -> Result<(), BootstrapError> {
     };
 
     if let Some(internal) = internal_server {
-        tokio::try_join!(public_server, internal)?;
+        if let Some(monitor_handle) = monitor_task {
+            tokio::try_join!(
+                async { public_server.await.map_err(BootstrapError::Io) },
+                async { internal.await.map_err(BootstrapError::Io) },
+                monitor_join(monitor_handle),
+            )?;
+        } else {
+            tokio::try_join!(
+                async { public_server.await.map_err(BootstrapError::Io) },
+                async { internal.await.map_err(BootstrapError::Io) },
+            )?;
+        }
+    } else if let Some(monitor_handle) = monitor_task {
+        tokio::try_join!(
+            async { public_server.await.map_err(BootstrapError::Io) },
+            monitor_join(monitor_handle),
+        )?;
     } else {
         public_server.await?;
     }
@@ -154,16 +195,22 @@ pub async fn run() -> Result<(), BootstrapError> {
 pub enum BootstrapError {
     #[error("config error: {0}")]
     Config(#[from] ConfigError),
+    #[error("monitor config error: {0}")]
+    MonitorConfig(ConfigError),
     #[error("telemetry error: {0}")]
     Telemetry(#[from] TelemetryError),
     #[error("storage error: {0}")]
     Storage(#[from] anon_ticket_domain::storage::StorageError),
+    #[error("monitor error: {0}")]
+    Monitor(#[from] anon_ticket_monitor::worker::MonitorError),
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error("invalid cache configuration: {0}")]
     InvalidCacheConfig(String),
     #[error("invalid bloom filter configuration: {0}")]
     InvalidBloomConfig(String),
+    #[error("task join error: {0}")]
+    Join(String),
 }
 
 #[cfg(unix)]
@@ -204,6 +251,54 @@ fn build_bloom_filter(
                 format!("API_PID_BLOOM_FP_RATE must be in (0,1): {rate}"),
             ),
         })
+}
+
+async fn prewarm_hints(
+    storage: &SeaOrmStorage,
+    cache: &InMemoryPidCache,
+    bloom: Option<&PidBloom>,
+) -> Result<(), BootstrapError> {
+    let start = Instant::now();
+    let pids = storage.all_payment_ids().await?;
+    for pid in &pids {
+        cache.mark_present(pid);
+        if let Some(b) = bloom {
+            b.insert(pid);
+        }
+    }
+    info!(
+        count = pids.len(),
+        elapsed_ms = start.elapsed().as_millis() as u64,
+        "prefilled cache/bloom with existing payments",
+    );
+    Ok(())
+}
+
+fn maybe_load_monitor_config() -> Result<Option<BootstrapConfig>, BootstrapError> {
+    match BootstrapConfig::load_from_env() {
+        Ok(cfg) => Ok(Some(cfg)),
+        Err(err) if allow_missing_monitor() => {
+            warn!(
+                ?err,
+                "monitor config missing; embedded monitor disabled (API_ALLOW_NO_MONITOR=1)"
+            );
+            Ok(None)
+        }
+        Err(err) => Err(BootstrapError::MonitorConfig(err)),
+    }
+}
+
+fn allow_missing_monitor() -> bool {
+    matches!(std::env::var("API_ALLOW_NO_MONITOR"), Ok(val) if val == "1" || val.eq_ignore_ascii_case("true"))
+}
+
+async fn monitor_join(
+    handle: tokio::task::JoinHandle<Result<(), anon_ticket_monitor::worker::MonitorError>>,
+) -> Result<(), BootstrapError> {
+    handle
+        .await
+        .map_err(|err| BootstrapError::Join(err.to_string()))??;
+    Ok(())
 }
 
 #[cfg(test)]

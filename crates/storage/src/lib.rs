@@ -12,6 +12,7 @@ mod token_store;
 
 use std::sync::Arc;
 
+use anon_ticket_domain::model::PaymentId;
 use anon_ticket_domain::storage::StorageResult;
 use builder::StorageBuilder;
 use errors::StorageError;
@@ -44,6 +45,27 @@ impl SeaOrmStorage {
 
     pub fn connection(&self) -> &DatabaseConnection {
         self.db.as_ref()
+    }
+
+    /// Returns all persisted payment IDs. Intended for boot-time Bloom/cache
+    /// prewarming; callers should be prepared for the memory cost of loading
+    /// the full set.
+    pub async fn all_payment_ids(&self) -> StorageResult<Vec<PaymentId>> {
+        use crate::entity::payments;
+        use sea_orm::{EntityTrait, QuerySelect};
+
+        let raw: Vec<Vec<u8>> = payments::Entity::find()
+            .select_only()
+            .column(payments::Column::Pid)
+            .into_tuple()
+            .all(self.connection())
+            .await
+            .map_err(StorageError::from_source)?;
+
+        raw.into_iter()
+            .map(PaymentId::try_from)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|err| StorageError::Database(err.to_string()))
     }
 }
 

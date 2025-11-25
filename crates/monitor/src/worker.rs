@@ -7,9 +7,14 @@ use tracing::warn;
 
 use anon_ticket_domain::{
     config::ConfigError,
-    services::telemetry::TelemetryError,
+    services::{
+        cache::{PidBloom, PidCache},
+        telemetry::TelemetryError,
+    },
     storage::{MonitorStateStore, PaymentStore, StorageError},
+    PaymentId,
 };
+use monero_rpc::RpcClientBuilder;
 
 use crate::{
     pipeline::process_entry,
@@ -32,6 +37,7 @@ pub async fn run_monitor<S, D>(
     config: anon_ticket_domain::config::BootstrapConfig,
     storage: D,
     source: S,
+    hooks: Option<MonitorHooks>,
 ) -> Result<(), MonitorError>
 where
     S: TransferSource,
@@ -69,6 +75,7 @@ where
             &mut height,
             min_payment_amount,
             safe_height,
+            hooks.as_ref(),
         )
         .await
         {
@@ -85,6 +92,7 @@ async fn monitor_tick<S, D>(
     current_height: &mut u64,
     min_payment_amount: i64,
     safe_height: u64,
+    hooks: Option<&MonitorHooks>,
 ) -> Result<(), MonitorError>
 where
     S: TransferSource,
@@ -108,6 +116,7 @@ where
         current_height,
         min_payment_amount,
         safe_height,
+        hooks,
     )
     .await
 }
@@ -118,6 +127,7 @@ async fn handle_batch<D>(
     current_height: &mut u64,
     min_payment_amount: i64,
     safe_height: u64,
+    hooks: Option<&MonitorHooks>,
 ) -> Result<(), MonitorError>
 where
     D: MonitorStateStore + PaymentStore,
@@ -132,7 +142,7 @@ where
             let h = h as u64;
             observed_height = Some(observed_height.map_or(h, |current| current.max(h)));
         }
-        process_entry(storage, entry, min_payment_amount).await?;
+        process_entry(storage, entry, min_payment_amount, hooks).await?;
     }
 
     let mut next_height = if let Some(max_height) = observed_height {
@@ -146,6 +156,40 @@ where
     gauge!("monitor_last_height", next_height as f64);
     *current_height = next_height;
     Ok(())
+}
+
+#[derive(Clone)]
+pub struct MonitorHooks {
+    pid_cache: Option<std::sync::Arc<dyn PidCache>>, // marks present after persistence
+    pid_bloom: Option<std::sync::Arc<PidBloom>>,     // inserts after persistence
+}
+
+impl MonitorHooks {
+    pub fn new(
+        pid_cache: Option<std::sync::Arc<dyn PidCache>>,
+        pid_bloom: Option<std::sync::Arc<PidBloom>>,
+    ) -> Self {
+        Self {
+            pid_cache,
+            pid_bloom,
+        }
+    }
+
+    pub fn mark_present(&self, pid: &PaymentId) {
+        if let Some(cache) = &self.pid_cache {
+            cache.mark_present(pid);
+        }
+        if let Some(bloom) = &self.pid_bloom {
+            bloom.insert(pid);
+        }
+    }
+}
+
+pub fn build_rpc_source(url: &str) -> Result<crate::rpc::RpcTransferSource, MonitorError> {
+    let rpc_client = RpcClientBuilder::new()
+        .build(url.to_string())
+        .map_err(|err| MonitorError::Rpc(err.to_string()))?;
+    Ok(crate::rpc::RpcTransferSource::new(rpc_client.wallet()))
 }
 
 #[cfg(test)]
@@ -207,12 +251,12 @@ mod tests {
         };
 
         // Should fail
-        let result = handle_batch(&storage, transfers.clone(), &mut height, 1, 200).await;
+        let result = handle_batch(&storage, transfers.clone(), &mut height, 1, 200, None).await;
         assert!(result.is_err());
 
         // Should succeed
         should_fail.store(false, Ordering::SeqCst);
-        let result = handle_batch(&storage, transfers, &mut height, 1, 200).await;
+        let result = handle_batch(&storage, transfers, &mut height, 1, 200, None).await;
         assert!(result.is_ok());
     }
 
@@ -248,7 +292,7 @@ mod tests {
         let mut height = 60;
         let safe_height = 40;
 
-        monitor_tick(&storage, &source, &mut height, 1, safe_height)
+        monitor_tick(&storage, &source, &mut height, 1, safe_height, None)
             .await
             .expect("tick succeeds");
 
@@ -298,7 +342,7 @@ mod tests {
         let mut height = 110;
         let safe_height = 115;
 
-        monitor_tick(&storage, &source, &mut height, 1, safe_height)
+        monitor_tick(&storage, &source, &mut height, 1, safe_height, None)
             .await
             .expect("tick succeeds");
 
