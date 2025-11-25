@@ -305,3 +305,6 @@ f492bac fix(api): prefill bloom to bypass negative cache
 - Populate Bloom immediately when marking a PID absent/present so the negative-cache grace window no longer blocks fresh payments; Bloom positives now skip the short-circuit.
 - Added integration test proving a payment that lands during the grace window redeems successfully because Bloom hints the handler to recheck storage.
 - Kept Bloom optional and false-positive-tolerant; verified with `cargo fmt --all`, `cargo clippy --workspace --all-features -- -D warnings`, and `cargo test --all --all-features`.
+56161f0... docs(env): annotate example config with defaults
+
+- Expanded `.env.example` with detailed comments explaining each variable's purpose and default value (e.g., Bloom sizing, Poll Interval, Confirmations).
