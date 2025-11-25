@@ -54,11 +54,20 @@ pub async fn run() -> Result<(), BootstrapError> {
         ));
     }
     let cache = Arc::new(InMemoryPidCache::with_capacity(cache_ttl, cache_capacity));
-    let bloom = build_bloom_filter(
-        api_config.pid_bloom_entries(),
-        api_config.pid_bloom_fp_rate(),
-    )?
-    .map(Arc::new);
+    let bloom_entries = api_config
+        .pid_bloom_entries()
+        .unwrap_or(DEFAULT_PID_BLOOM_ENTRIES);
+    let bloom_fp = api_config
+        .pid_bloom_fp_rate()
+        .unwrap_or(DEFAULT_PID_BLOOM_FP_RATE);
+    if bloom_entries == 0 && !allow_missing_bloom() {
+        return Err(BootstrapError::InvalidBloomConfig(
+            "Bloom filter is disabled (API_PID_BLOOM_ENTRIES=0) but API_ALLOW_NO_BLOOM is not set"
+                .to_string(),
+        ));
+    }
+    let bloom = build_bloom_filter(Some(bloom_entries), Some(bloom_fp))?.map(Arc::new);
+    info!(bloom_entries, bloom_fp, "configured pid bloom filter");
 
     prewarm_hints(&storage, &cache, bloom.as_deref()).await?;
 
@@ -289,7 +298,11 @@ fn maybe_load_monitor_config() -> Result<Option<BootstrapConfig>, BootstrapError
 }
 
 fn allow_missing_monitor() -> bool {
-    matches!(std::env::var("API_ALLOW_NO_MONITOR"), Ok(val) if val == "1" || val.eq_ignore_ascii_case("true"))
+    env_truthy("API_ALLOW_NO_MONITOR")
+}
+
+fn allow_missing_bloom() -> bool {
+    env_truthy("API_ALLOW_NO_BLOOM")
 }
 
 async fn monitor_join(
@@ -299,6 +312,10 @@ async fn monitor_join(
         .await
         .map_err(|err| BootstrapError::Join(err.to_string()))??;
     Ok(())
+}
+
+fn env_truthy(key: &str) -> bool {
+    matches!(std::env::var(key), Ok(val) if val == "1" || val.eq_ignore_ascii_case("true"))
 }
 
 #[cfg(test)]
