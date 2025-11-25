@@ -252,6 +252,13 @@ f09beac... chore(todo): plan monitor confirmation safety
 
 - Planned **ShortTerm-30** to enforce confirmation depth in the monitor loop, preventing reorg attacks by ignoring immature transactions.
 
+7597049 fix(api): require internal listener
+
+- **Config Guardrails**: `ApiConfig::load_from_env` now fails fast unless either `API_INTERNAL_BIND_ADDRESS` or `API_INTERNAL_UNIX_SOCKET` is set, removing the public-metrics fallback and eliminating the chance of running without an internal surface.
+- **Bootstrap Simplification**: `application.rs` always builds both listeners; `/metrics` and revoke stay internal-only, and socket/TCP binding paths are consolidated via `cfg_if!` to prune duplicated `#[cfg]` branches.
+- **Docs & Samples**: Updated `.env.example`, README, API README/DESIGN to state the internal listener is mandatory and to reflect the Bloom-only DoS posture; removed stale negative-cache variable from samples.
+- **Tests**: Refreshed config tests for the new requirement and reran `cargo fmt --all`, `cargo clippy --workspace --all-features -- -D warnings`, and `cargo test --all --all-features`.
+
 958e406 feat(monitor): enforce confirmation window
 
 - Added `MONITOR_MIN_CONFIRMATIONS` (default `10`) to `BootstrapConfig`, trimming and testing overrides so deployments can bound reorg risk without recompiling.
