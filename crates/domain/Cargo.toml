@@ -27,3 +27,4 @@ moka.workspace = true
 getrandom.workspace = true
 cfg-if.workspace = true
 monero.workspace = true
+fastbloom.workspace = true

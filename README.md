@@ -166,9 +166,12 @@ roughly 500ms (configurable via `API_PID_CACHE_NEGATIVE_GRACE_MS`) without
 hitting the database, then the handler re-validates against storage. Entries
 also expire after a configurable TTL (`API_PID_CACHE_TTL_SECS`, default 60s) and
 respect a tunable capacity (`API_PID_CACHE_CAPACITY`, default 100k) so
-legitimate clients can retry once the monitor catches up. The abstraction lives
-in `anon_ticket_domain` so it can later be backed by Redis or a real Bloom
-filter.
+legitimate clients can retry once the monitor catches up. A Bloom filter
+(`API_PID_BLOOM_ENTRIES`, `API_PID_BLOOM_FP_RATE`, defaults 100k / 0.01) provides
+an additional hint path with zero expected false negatives (false positives
+allowed), ensuring we never block real payments while still reducing cache
+short-circuiting noise. The abstractions live in `anon_ticket_domain` so they
+can be swapped for Redis or other backends later.
 
 ### Metrics & Abuse Detection
 

@@ -36,6 +36,8 @@ Configured via environment variables.
 | `API_PID_CACHE_TTL_SECS` | TTL (in seconds) for positive/negative PID cache entries. | `60` |
 | `API_PID_CACHE_CAPACITY` | Max entries per cache (positives/negatives). | `100000` |
 | `API_PID_CACHE_NEGATIVE_GRACE_MS` | Cooldown window to short-circuit repeated missing PIDs before rechecking storage. | `500` |
+| `API_PID_BLOOM_ENTRIES` | Expected PID cardinality for the Bloom filter (0 disables). | `100000` |
+| `API_PID_BLOOM_FP_RATE` | False-positive rate for the Bloom filter (0-1). | `0.01` |
 
 ## 📚 API Reference
 

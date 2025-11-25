@@ -5,7 +5,7 @@ use anon_ticket_domain::model::{
     derive_service_token, NewPayment, NewServiceToken, PaymentId, ServiceToken,
 };
 use anon_ticket_domain::services::{
-    cache::InMemoryPidCache,
+    cache::{InMemoryPidCache, PidBloom},
     telemetry::{init_telemetry, TelemetryConfig, TelemetryGuard},
 };
 use anon_ticket_domain::{PaymentStore, PidCache, TokenStore};
@@ -42,7 +42,8 @@ fn build_state(
     negative_grace: Duration,
 ) -> AppState {
     let telemetry = telemetry();
-    AppState::new(storage, cache, telemetry.clone(), negative_grace)
+    let bloom = PidBloom::new(10_000, 0.01).ok().map(Arc::new);
+    AppState::new(storage, cache, telemetry.clone(), negative_grace, bloom)
 }
 
 fn with_cache(storage: SeaOrmStorage) -> AppState {

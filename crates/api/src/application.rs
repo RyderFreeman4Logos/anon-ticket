@@ -6,7 +6,7 @@ use std::fs;
 use actix_web::{middleware::Logger, web, App, HttpServer};
 use anon_ticket_domain::config::{ApiConfig, ConfigError};
 use anon_ticket_domain::services::{
-    cache::InMemoryPidCache,
+    cache::{BloomConfigError, InMemoryPidCache, PidBloom},
     telemetry::{init_telemetry, TelemetryConfig, TelemetryError},
 };
 use anon_ticket_storage::SeaOrmStorage;
@@ -18,6 +18,8 @@ use crate::{
 };
 
 const DEFAULT_PID_CACHE_NEGATIVE_GRACE_MS: u64 = 500;
+const DEFAULT_PID_BLOOM_ENTRIES: u64 = 100_000;
+const DEFAULT_PID_BLOOM_FP_RATE: f64 = 0.01;
 
 pub async fn run() -> Result<(), BootstrapError> {
     let config = ApiConfig::load_from_env()?;
@@ -44,7 +46,14 @@ pub async fn run() -> Result<(), BootstrapError> {
         ));
     }
     let cache = Arc::new(InMemoryPidCache::with_capacity(cache_ttl, cache_capacity));
-    let state = AppState::new(storage, cache, telemetry.clone(), negative_grace);
+    let bloom = build_bloom_filter(config.pid_bloom_entries(), config.pid_bloom_fp_rate())?;
+    let state = AppState::new(
+        storage,
+        cache,
+        telemetry.clone(),
+        negative_grace,
+        bloom.map(Arc::new),
+    );
 
     let include_metrics_on_public = !config.has_internal_listener();
     let public_state = state.clone();
@@ -153,6 +162,8 @@ pub enum BootstrapError {
     Io(#[from] std::io::Error),
     #[error("invalid cache configuration: {0}")]
     InvalidCacheConfig(String),
+    #[error("invalid bloom filter configuration: {0}")]
+    InvalidBloomConfig(String),
 }
 
 #[cfg(unix)]
@@ -167,6 +178,32 @@ fn cleanup_socket(path: &str) -> std::io::Result<()> {
 #[cfg(not(unix))]
 fn cleanup_socket(_path: &str) -> std::io::Result<()> {
     Ok(())
+}
+
+fn build_bloom_filter(
+    entries: Option<u64>,
+    fp_rate: Option<f64>,
+) -> Result<Option<PidBloom>, BootstrapError> {
+    let entries = entries.unwrap_or(DEFAULT_PID_BLOOM_ENTRIES);
+    if entries == 0 {
+        return Ok(None);
+    }
+    let fp = fp_rate.unwrap_or(DEFAULT_PID_BLOOM_FP_RATE);
+    if !(0.0..1.0).contains(&fp) {
+        return Err(BootstrapError::InvalidBloomConfig(
+            "API_PID_BLOOM_FP_RATE must be between 0 and 1".to_string(),
+        ));
+    }
+    PidBloom::new(entries, fp)
+        .map(Some)
+        .map_err(|err| match err {
+            BloomConfigError::InvalidEntries => {
+                BootstrapError::InvalidBloomConfig("API_PID_BLOOM_ENTRIES must be > 0".into())
+            }
+            BloomConfigError::InvalidFalsePositiveRate(rate) => BootstrapError::InvalidBloomConfig(
+                format!("API_PID_BLOOM_FP_RATE must be in (0,1): {rate}"),
+            ),
+        })
 }
 
 #[cfg(test)]

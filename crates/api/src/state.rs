@@ -1,6 +1,10 @@
 use std::sync::Arc;
 
-use anon_ticket_domain::services::{cache::InMemoryPidCache, telemetry::TelemetryGuard};
+use anon_ticket_domain::model::PaymentId;
+use anon_ticket_domain::services::{
+    cache::{InMemoryPidCache, PidBloom},
+    telemetry::TelemetryGuard,
+};
 use anon_ticket_storage::SeaOrmStorage;
 use std::time::Duration;
 
@@ -10,6 +14,7 @@ pub struct AppState {
     cache: Arc<InMemoryPidCache>,
     telemetry: TelemetryGuard,
     negative_grace: Duration,
+    bloom: Option<Arc<PidBloom>>,
 }
 
 impl AppState {
@@ -18,12 +23,14 @@ impl AppState {
         cache: Arc<InMemoryPidCache>,
         telemetry: TelemetryGuard,
         negative_grace: Duration,
+        bloom: Option<Arc<PidBloom>>,
     ) -> Self {
         Self {
             storage,
             cache,
             telemetry,
             negative_grace,
+            bloom,
         }
     }
 
@@ -41,5 +48,15 @@ impl AppState {
 
     pub fn negative_grace(&self) -> Duration {
         self.negative_grace
+    }
+
+    pub fn bloom(&self) -> Option<&PidBloom> {
+        self.bloom.as_deref()
+    }
+
+    pub fn insert_bloom(&self, pid: &PaymentId) {
+        if let Some(bloom) = &self.bloom {
+            bloom.insert(pid);
+        }
     }
 }

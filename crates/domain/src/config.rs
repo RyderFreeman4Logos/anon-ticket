@@ -6,7 +6,7 @@ use thiserror::Error;
 
 /// API-specific configuration (HTTP bind + shared database) so the HTTP
 /// surface does not depend on monitor-only environment variables.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ApiConfig {
     database_url: String,
     api_bind_address: String,
@@ -16,6 +16,8 @@ pub struct ApiConfig {
     pid_cache_ttl_secs: Option<u64>,
     pid_cache_capacity: Option<u64>,
     pid_cache_negative_grace_ms: Option<u64>,
+    pid_bloom_entries: Option<u64>,
+    pid_bloom_fp_rate: Option<f64>,
 }
 
 impl ApiConfig {
@@ -30,6 +32,8 @@ impl ApiConfig {
             pid_cache_ttl_secs: get_optional_u64("API_PID_CACHE_TTL_SECS")?,
             pid_cache_capacity: get_optional_u64("API_PID_CACHE_CAPACITY")?,
             pid_cache_negative_grace_ms: get_optional_u64("API_PID_CACHE_NEGATIVE_GRACE_MS")?,
+            pid_bloom_entries: get_optional_u64("API_PID_BLOOM_ENTRIES")?,
+            pid_bloom_fp_rate: get_optional_f64("API_PID_BLOOM_FP_RATE")?,
         })
     }
 
@@ -67,6 +71,14 @@ impl ApiConfig {
 
     pub fn pid_cache_negative_grace_ms(&self) -> Option<u64> {
         self.pid_cache_negative_grace_ms
+    }
+
+    pub fn pid_bloom_entries(&self) -> Option<u64> {
+        self.pid_bloom_entries
+    }
+
+    pub fn pid_bloom_fp_rate(&self) -> Option<f64> {
+        self.pid_bloom_fp_rate
     }
 }
 
@@ -207,6 +219,16 @@ fn get_optional_u64(key: &'static str) -> Result<Option<u64>, ConfigError> {
         .transpose()
 }
 
+fn get_optional_f64(key: &'static str) -> Result<Option<f64>, ConfigError> {
+    get_optional_var(key)
+        .map(|value| {
+            value
+                .parse()
+                .map_err(|source| ConfigError::InvalidFloat { key, source })
+        })
+        .transpose()
+}
+
 /// Errors emitted when environment parsing fails.
 #[derive(Debug, Error)]
 pub enum ConfigError {
@@ -217,6 +239,12 @@ pub enum ConfigError {
         key: &'static str,
         #[source]
         source: std::num::ParseIntError,
+    },
+    #[error("invalid float in `{key}`: {source}")]
+    InvalidFloat {
+        key: &'static str,
+        #[source]
+        source: std::num::ParseFloatError,
     },
 }
 
@@ -237,6 +265,8 @@ mod tests {
         std::env::remove_var("API_PID_CACHE_TTL_SECS");
         std::env::remove_var("API_PID_CACHE_CAPACITY");
         std::env::remove_var("API_PID_CACHE_NEGATIVE_GRACE_MS");
+        std::env::remove_var("API_PID_BLOOM_ENTRIES");
+        std::env::remove_var("API_PID_BLOOM_FP_RATE");
         std::env::set_var("MONERO_RPC_URL", "http://localhost:18082/json_rpc");
         std::env::set_var("MONITOR_START_HEIGHT", "42");
         std::env::remove_var("MONITOR_MIN_PAYMENT_AMOUNT");
@@ -270,6 +300,8 @@ mod tests {
         std::env::set_var("API_PID_CACHE_TTL_SECS", "120");
         std::env::set_var("API_PID_CACHE_CAPACITY", "200000");
         std::env::set_var("API_PID_CACHE_NEGATIVE_GRACE_MS", "750");
+        std::env::set_var("API_PID_BLOOM_ENTRIES", "500000");
+        std::env::set_var("API_PID_BLOOM_FP_RATE", "0.01");
 
         let config = ApiConfig::load_from_env().expect("config loads");
         assert_eq!(config.api_unix_socket(), Some("/tmp/api.sock"));
@@ -289,6 +321,8 @@ mod tests {
         std::env::remove_var("API_PID_CACHE_TTL_SECS");
         std::env::remove_var("API_PID_CACHE_CAPACITY");
         std::env::remove_var("API_PID_CACHE_NEGATIVE_GRACE_MS");
+        std::env::remove_var("API_PID_BLOOM_ENTRIES");
+        std::env::remove_var("API_PID_BLOOM_FP_RATE");
         set_env();
     }
 
@@ -303,6 +337,24 @@ mod tests {
             err,
             ConfigError::InvalidNumber {
                 key: "API_PID_CACHE_TTL_SECS",
+                ..
+            }
+        ));
+
+        set_env();
+    }
+
+    #[test]
+    fn api_config_rejects_invalid_bloom_float() {
+        let _guard = ENV_GUARD.lock().unwrap();
+        set_env();
+        std::env::set_var("API_PID_BLOOM_FP_RATE", "not-a-float");
+
+        let err = ApiConfig::load_from_env().unwrap_err();
+        assert!(matches!(
+            err,
+            ConfigError::InvalidFloat {
+                key: "API_PID_BLOOM_FP_RATE",
                 ..
             }
         ));

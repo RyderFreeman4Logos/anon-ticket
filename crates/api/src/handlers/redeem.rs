@@ -34,10 +34,11 @@ pub async fn redeem_handler(
     })?;
 
     if !state.cache().might_contain(&pid) {
+        let bloom_positive = state.bloom().is_some_and(|b| b.might_contain(&pid));
         let should_short_circuit = state
             .cache()
             .negative_entry_age(&pid)
-            .is_some_and(|age| age < state.negative_grace());
+            .is_some_and(|age| age < state.negative_grace() && !bloom_positive);
         if should_short_circuit {
             counter!("api_redeem_cache_hints_total", 1, "hint" => "absent_blocked");
             counter!("api_redeem_requests_total", 1, "status" => "cache_absent");
@@ -71,6 +72,7 @@ async fn handle_success(
         .await?;
     counter!("api_redeem_requests_total", 1, "status" => "success");
     state.cache().mark_present(&pid);
+    state.insert_bloom(&pid);
 
     Ok(HttpResponse::Ok().json(build_redeem_response("success", token_record)))
 }
@@ -80,12 +82,14 @@ async fn handle_absent(state: &AppState, pid: PaymentId) -> Result<HttpResponse,
     match maybe_payment {
         Some(record) if record.status == PaymentStatus::Claimed => {
             state.cache().mark_present(&pid);
+            state.insert_bloom(&pid);
             let token = ensure_token_record(state, &pid, &record).await?;
             counter!("api_redeem_requests_total", 1, "status" => "already_claimed");
             Ok(HttpResponse::Ok().json(build_redeem_response("already_claimed", token)))
         }
         Some(_) => {
             state.cache().mark_present(&pid);
+            state.insert_bloom(&pid);
             counter!("api_redeem_requests_total", 1, "status" => "pending");
             Err(ApiError::NotFound)
         }
