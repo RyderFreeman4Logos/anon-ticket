@@ -55,7 +55,11 @@ pub async fn run() -> Result<(), BootstrapError> {
         ));
     }
     let bloom = build_bloom_filter(Some(bloom_entries), Some(bloom_fp))?.map(Arc::new);
-    info!(bloom_entries, bloom_fp, "configured pid bloom filter");
+    let estimated_bloom_bytes = estimate_bloom_bytes(bloom_entries, bloom_fp);
+    info!(
+        bloom_entries,
+        bloom_fp, estimated_bloom_bytes, "configured pid bloom filter",
+    );
 
     prewarm_hints(&storage, &cache, bloom.as_deref()).await?;
 
@@ -302,6 +306,14 @@ async fn monitor_join(
 
 fn env_truthy(key: &str) -> bool {
     matches!(std::env::var(key), Ok(val) if val == "1" || val.eq_ignore_ascii_case("true"))
+}
+
+fn estimate_bloom_bytes(entries: u64, fp_rate: f64) -> u64 {
+    if entries == 0 {
+        return 0;
+    }
+    let m_bits = -(entries as f64) * fp_rate.ln() / (std::f64::consts::LN_2.powi(2));
+    (m_bits.ceil() as u64).div_ceil(8)
 }
 
 #[cfg(test)]

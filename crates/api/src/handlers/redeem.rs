@@ -33,8 +33,9 @@ pub async fn redeem_handler(
         counter!("api_redeem_requests_total", 1, "status" => "invalid_pid");
     })?;
 
-    if let Some(bloom) = state.bloom() {
-        if !bloom.might_contain(&pid) {
+    let bloom_positive = state.bloom().map(|b| b.might_contain(&pid));
+    if let Some(hit) = bloom_positive {
+        if !hit {
             counter!("api_redeem_cache_hints_total", 1, "hint" => "bloom_absent");
             counter!("api_redeem_requests_total", 1, "status" => "bloom_absent");
             return Err(ApiError::NotFound);
@@ -44,7 +45,7 @@ pub async fn redeem_handler(
 
     match state.storage().claim_payment(&pid).await? {
         Some(outcome) => handle_success(&state, pid, outcome).await,
-        None => handle_absent(&state, pid).await,
+        None => handle_absent(&state, pid, bloom_positive.unwrap_or(false)).await,
     }
 }
 
@@ -71,7 +72,11 @@ async fn handle_success(
     Ok(HttpResponse::Ok().json(build_redeem_response("success", token_record)))
 }
 
-async fn handle_absent(state: &AppState, pid: PaymentId) -> Result<HttpResponse, ApiError> {
+async fn handle_absent(
+    state: &AppState,
+    pid: PaymentId,
+    bloom_positive: bool,
+) -> Result<HttpResponse, ApiError> {
     let maybe_payment = state.storage().find_payment(&pid).await?;
     match maybe_payment {
         Some(record) if record.status == PaymentStatus::Claimed => {
@@ -88,6 +93,9 @@ async fn handle_absent(state: &AppState, pid: PaymentId) -> Result<HttpResponse,
             Err(ApiError::NotFound)
         }
         None => {
+            if bloom_positive {
+                counter!("api_redeem_bloom_db_miss_total", 1, "hit" => "positive_db_miss");
+            }
             counter!("api_redeem_requests_total", 1, "status" => "not_found");
             Err(ApiError::NotFound)
         }
