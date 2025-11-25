@@ -61,6 +61,9 @@ where
             }
         };
 
+        gauge!("monitor_wallet_height", wallet_height as f64);
+        gauge!("monitor_last_height", height as f64);
+
         let safe_height = wallet_height
             .saturating_add(1)
             .saturating_sub(min_confirmations);

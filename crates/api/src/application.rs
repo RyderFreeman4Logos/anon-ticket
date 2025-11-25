@@ -17,6 +17,7 @@ use anon_ticket_domain::PidCache;
 use anon_ticket_monitor::{build_rpc_source, run_monitor, worker::MonitorHooks};
 use anon_ticket_storage::SeaOrmStorage;
 use cfg_if::cfg_if;
+use metrics::gauge;
 use thiserror::Error;
 use tracing::{info, warn};
 
@@ -33,6 +34,7 @@ pub async fn run() -> Result<(), BootstrapError> {
     let monitor_config = maybe_load_monitor_config()?;
     let telemetry_config = TelemetryConfig::from_env("API");
     let telemetry = init_telemetry(&telemetry_config)?;
+    gauge!("api_up", 1.0);
     let storage = SeaOrmStorage::connect(api_config.database_url()).await?;
     let cache_ttl = Duration::from_secs(
         api_config
