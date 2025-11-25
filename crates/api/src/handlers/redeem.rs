@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use actix_web::{web, HttpResponse};
 use anon_ticket_domain::model::{
     derive_service_token, ClaimOutcome, NewServiceToken, PaymentId, PaymentRecord, PaymentStatus,
@@ -14,8 +12,6 @@ use serde::{Deserialize, Serialize};
 use crate::state::AppState;
 
 use super::ApiError;
-
-pub const PID_CACHE_NEGATIVE_GRACE: Duration = Duration::from_millis(500);
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct RedeemRequest {
@@ -41,7 +37,7 @@ pub async fn redeem_handler(
         let should_short_circuit = state
             .cache()
             .negative_entry_age(&pid)
-            .is_some_and(|age| age < PID_CACHE_NEGATIVE_GRACE);
+            .is_some_and(|age| age < state.negative_grace());
         if should_short_circuit {
             counter!("api_redeem_cache_hints_total", 1, "hint" => "absent_blocked");
             counter!("api_redeem_requests_total", 1, "status" => "cache_absent");

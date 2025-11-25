@@ -162,8 +162,10 @@ revoke endpoint is disabled (public requests return 404).
 
 The API keeps an in-memory PID cache (`InMemoryPidCache`) that records PIDs
 observed via storage lookups. Negative entries short-circuit repeated probes for
-roughly 500ms without hitting the database, then the handler re-validates
-against storage. Entries also expire after a short TTL (60s by default) so
+roughly 500ms (configurable via `API_PID_CACHE_NEGATIVE_GRACE_MS`) without
+hitting the database, then the handler re-validates against storage. Entries
+also expire after a configurable TTL (`API_PID_CACHE_TTL_SECS`, default 60s) and
+respect a tunable capacity (`API_PID_CACHE_CAPACITY`, default 100k) so
 legitimate clients can retry once the monitor catches up. The abstraction lives
 in `anon_ticket_domain` so it can later be backed by Redis or a real Bloom
 filter.

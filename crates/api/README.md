@@ -22,13 +22,20 @@ Configured via environment variables.
 ### Internal Interface
 | Variable | Description | Default |
 | :--- | :--- | :--- |
-| `INTERNAL_BIND_ADDRESS` | TCP address for admin/metrics (e.g. `127.0.0.1:9090`). | `None` (Disabled) |
-| `INTERNAL_UNIX_SOCKET` | Path to internal Unix socket. | `None` |
+| `API_INTERNAL_BIND_ADDRESS` | TCP address for admin/metrics (e.g. `127.0.0.1:9090`). | `None` (Disabled) |
+| `API_INTERNAL_UNIX_SOCKET` | Path to internal Unix socket. | `None` |
 
 ### Dependencies
 | Variable | Description | Required |
 | :--- | :--- | :--- |
 | `DATABASE_URL` | Connection string for SQLite/Postgres. | Yes |
+
+### PID Cache Tuning
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `API_PID_CACHE_TTL_SECS` | TTL (in seconds) for positive/negative PID cache entries. | `60` |
+| `API_PID_CACHE_CAPACITY` | Max entries per cache (positives/negatives). | `100000` |
+| `API_PID_CACHE_NEGATIVE_GRACE_MS` | Cooldown window to short-circuit repeated missing PIDs before rechecking storage. | `500` |
 
 ## 📚 API Reference
 

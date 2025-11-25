@@ -56,14 +56,14 @@ impl PidCache for InMemoryPidCache {
 }
 
 impl InMemoryPidCache {
-    const DEFAULT_TTL: Duration = Duration::from_secs(60);
-    const DEFAULT_CAPACITY: u64 = 100_000;
+    pub const DEFAULT_TTL: Duration = Duration::from_secs(60);
+    pub const DEFAULT_CAPACITY: u64 = 100_000;
 
     pub fn new(ttl: Duration) -> Self {
         Self::with_capacity(ttl, Self::DEFAULT_CAPACITY)
     }
 
-    fn with_capacity(ttl: Duration, capacity: u64) -> Self {
+    pub fn with_capacity(ttl: Duration, capacity: u64) -> Self {
         let capacity = capacity.max(1);
         Self {
             positives: Cache::builder()

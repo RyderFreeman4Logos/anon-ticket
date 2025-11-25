@@ -14,10 +14,12 @@ use chrono::Utc;
 use tokio::time::sleep;
 
 use crate::handlers::{
-    redeem::{redeem_handler, RedeemRequest, RedeemResponse, PID_CACHE_NEGATIVE_GRACE},
+    redeem::{redeem_handler, RedeemRequest, RedeemResponse},
     token::{revoke_token_handler, token_status_handler, RevokeRequest, TokenStatusResponse},
 };
 use crate::state::AppState;
+
+const DEFAULT_NEGATIVE_GRACE: Duration = Duration::from_millis(500);
 
 fn test_pid() -> PaymentId {
     PaymentId::parse("0123456789abcdef").unwrap()
@@ -34,17 +36,29 @@ fn telemetry() -> TelemetryGuard {
     init_telemetry(&config).expect("telemetry inits")
 }
 
-fn build_state(storage: SeaOrmStorage, cache: Arc<InMemoryPidCache>) -> AppState {
+fn build_state(
+    storage: SeaOrmStorage,
+    cache: Arc<InMemoryPidCache>,
+    negative_grace: Duration,
+) -> AppState {
     let telemetry = telemetry();
-    AppState::new(storage, cache, telemetry.clone())
+    AppState::new(storage, cache, telemetry.clone(), negative_grace)
 }
 
 fn with_cache(storage: SeaOrmStorage) -> AppState {
-    build_state(storage, Arc::new(InMemoryPidCache::default()))
+    build_state(
+        storage,
+        Arc::new(InMemoryPidCache::default()),
+        DEFAULT_NEGATIVE_GRACE,
+    )
 }
 
 fn with_cache_ttl(storage: SeaOrmStorage, ttl: Duration) -> AppState {
-    build_state(storage, Arc::new(InMemoryPidCache::new(ttl)))
+    build_state(
+        storage,
+        Arc::new(InMemoryPidCache::new(ttl)),
+        DEFAULT_NEGATIVE_GRACE,
+    )
 }
 
 async fn insert_token(storage: &SeaOrmStorage) -> ServiceToken {
@@ -225,7 +239,7 @@ async fn cached_absence_grace_window_allows_redemption() {
         .await
         .unwrap();
 
-    sleep(PID_CACHE_NEGATIVE_GRACE + Duration::from_millis(50)).await;
+    sleep(DEFAULT_NEGATIVE_GRACE + Duration::from_millis(50)).await;
 
     let app = test::init_service(
         App::new()

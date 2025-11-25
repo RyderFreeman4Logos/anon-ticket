@@ -1,4 +1,4 @@
-use std::{path::Path, sync::Arc};
+use std::{path::Path, sync::Arc, time::Duration};
 
 #[cfg(unix)]
 use std::fs;
@@ -17,13 +17,34 @@ use crate::{
     state::AppState,
 };
 
+const DEFAULT_PID_CACHE_NEGATIVE_GRACE_MS: u64 = 500;
+
 pub async fn run() -> Result<(), BootstrapError> {
     let config = ApiConfig::load_from_env()?;
     let telemetry_config = TelemetryConfig::from_env("API");
     let telemetry = init_telemetry(&telemetry_config)?;
     let storage = SeaOrmStorage::connect(config.database_url()).await?;
-    let cache = Arc::new(InMemoryPidCache::default());
-    let state = AppState::new(storage, cache, telemetry.clone());
+    let cache_ttl = Duration::from_secs(
+        config
+            .pid_cache_ttl_secs()
+            .unwrap_or_else(|| InMemoryPidCache::DEFAULT_TTL.as_secs()),
+    );
+    let cache_capacity = config
+        .pid_cache_capacity()
+        .unwrap_or(InMemoryPidCache::DEFAULT_CAPACITY);
+    let negative_grace = Duration::from_millis(
+        config
+            .pid_cache_negative_grace_ms()
+            .unwrap_or(DEFAULT_PID_CACHE_NEGATIVE_GRACE_MS),
+    );
+    if cache_ttl < negative_grace {
+        return Err(BootstrapError::InvalidCacheConfig(
+            "API_PID_CACHE_TTL_SECS must be >= API_PID_CACHE_NEGATIVE_GRACE_MS (converted to seconds)"
+                .to_string(),
+        ));
+    }
+    let cache = Arc::new(InMemoryPidCache::with_capacity(cache_ttl, cache_capacity));
+    let state = AppState::new(storage, cache, telemetry.clone(), negative_grace);
 
     let include_metrics_on_public = !config.has_internal_listener();
     let public_state = state.clone();
@@ -130,6 +151,8 @@ pub enum BootstrapError {
     Storage(#[from] anon_ticket_domain::storage::StorageError),
     #[error(transparent)]
     Io(#[from] std::io::Error),
+    #[error("invalid cache configuration: {0}")]
+    InvalidCacheConfig(String),
 }
 
 #[cfg(unix)]

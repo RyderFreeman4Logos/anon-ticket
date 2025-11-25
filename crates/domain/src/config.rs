@@ -13,6 +13,9 @@ pub struct ApiConfig {
     api_unix_socket: Option<String>,
     internal_bind_address: Option<String>,
     internal_unix_socket: Option<String>,
+    pid_cache_ttl_secs: Option<u64>,
+    pid_cache_capacity: Option<u64>,
+    pid_cache_negative_grace_ms: Option<u64>,
 }
 
 impl ApiConfig {
@@ -24,6 +27,9 @@ impl ApiConfig {
             api_unix_socket: get_optional_var("API_UNIX_SOCKET"),
             internal_bind_address: get_optional_var("API_INTERNAL_BIND_ADDRESS"),
             internal_unix_socket: get_optional_var("API_INTERNAL_UNIX_SOCKET"),
+            pid_cache_ttl_secs: get_optional_u64("API_PID_CACHE_TTL_SECS")?,
+            pid_cache_capacity: get_optional_u64("API_PID_CACHE_CAPACITY")?,
+            pid_cache_negative_grace_ms: get_optional_u64("API_PID_CACHE_NEGATIVE_GRACE_MS")?,
         })
     }
 
@@ -49,6 +55,18 @@ impl ApiConfig {
 
     pub fn has_internal_listener(&self) -> bool {
         self.internal_bind_address.is_some() || self.internal_unix_socket.is_some()
+    }
+
+    pub fn pid_cache_ttl_secs(&self) -> Option<u64> {
+        self.pid_cache_ttl_secs
+    }
+
+    pub fn pid_cache_capacity(&self) -> Option<u64> {
+        self.pid_cache_capacity
+    }
+
+    pub fn pid_cache_negative_grace_ms(&self) -> Option<u64> {
+        self.pid_cache_negative_grace_ms
     }
 }
 
@@ -179,6 +197,16 @@ fn get_optional_var(key: &'static str) -> Option<String> {
     })
 }
 
+fn get_optional_u64(key: &'static str) -> Result<Option<u64>, ConfigError> {
+    get_optional_var(key)
+        .map(|value| {
+            value
+                .parse()
+                .map_err(|source| ConfigError::InvalidNumber { key, source })
+        })
+        .transpose()
+}
+
 /// Errors emitted when environment parsing fails.
 #[derive(Debug, Error)]
 pub enum ConfigError {
@@ -206,6 +234,9 @@ mod tests {
         std::env::remove_var("API_UNIX_SOCKET");
         std::env::remove_var("API_INTERNAL_BIND_ADDRESS");
         std::env::remove_var("API_INTERNAL_UNIX_SOCKET");
+        std::env::remove_var("API_PID_CACHE_TTL_SECS");
+        std::env::remove_var("API_PID_CACHE_CAPACITY");
+        std::env::remove_var("API_PID_CACHE_NEGATIVE_GRACE_MS");
         std::env::set_var("MONERO_RPC_URL", "http://localhost:18082/json_rpc");
         std::env::set_var("MONITOR_START_HEIGHT", "42");
         std::env::remove_var("MONITOR_MIN_PAYMENT_AMOUNT");
@@ -236,6 +267,9 @@ mod tests {
         std::env::set_var("API_UNIX_SOCKET", "/tmp/api.sock");
         std::env::set_var("API_INTERNAL_BIND_ADDRESS", "127.0.0.1:9090");
         std::env::set_var("API_INTERNAL_UNIX_SOCKET", "/tmp/api-internal.sock");
+        std::env::set_var("API_PID_CACHE_TTL_SECS", "120");
+        std::env::set_var("API_PID_CACHE_CAPACITY", "200000");
+        std::env::set_var("API_PID_CACHE_NEGATIVE_GRACE_MS", "750");
 
         let config = ApiConfig::load_from_env().expect("config loads");
         assert_eq!(config.api_unix_socket(), Some("/tmp/api.sock"));
@@ -245,10 +279,34 @@ mod tests {
             Some("/tmp/api-internal.sock")
         );
         assert!(config.has_internal_listener());
+        assert_eq!(config.pid_cache_ttl_secs(), Some(120));
+        assert_eq!(config.pid_cache_capacity(), Some(200_000));
+        assert_eq!(config.pid_cache_negative_grace_ms(), Some(750));
 
         std::env::remove_var("API_UNIX_SOCKET");
         std::env::remove_var("API_INTERNAL_BIND_ADDRESS");
         std::env::remove_var("API_INTERNAL_UNIX_SOCKET");
+        std::env::remove_var("API_PID_CACHE_TTL_SECS");
+        std::env::remove_var("API_PID_CACHE_CAPACITY");
+        std::env::remove_var("API_PID_CACHE_NEGATIVE_GRACE_MS");
+        set_env();
+    }
+
+    #[test]
+    fn api_config_rejects_invalid_pid_cache_number() {
+        let _guard = ENV_GUARD.lock().unwrap();
+        set_env();
+        std::env::set_var("API_PID_CACHE_TTL_SECS", "abc");
+
+        let err = ApiConfig::load_from_env().unwrap_err();
+        assert!(matches!(
+            err,
+            ConfigError::InvalidNumber {
+                key: "API_PID_CACHE_TTL_SECS",
+                ..
+            }
+        ));
+
         set_env();
     }
 
