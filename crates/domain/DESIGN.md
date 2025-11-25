@@ -31,16 +31,13 @@ The `ServiceToken` is deterministically derived from the `PaymentId` and the Mon
 - **Recovery**: We don't need to "backup" tokens. As long as we have the payment record (PID + TXID), we can always recover the service token.
 - **Auditability**: The derivation logic is centralized in `model/mod.rs`, ensuring that the API and any future auditing tools produce identical results.
 
-## 3. Intelligent Defense: The Negative Cache
+## 3. Intelligent Defense: Bloom-First, Positive-Only Hints
 
-Protecting the database is paramount. A common attack vector is "Cache Penetration," where an attacker floods the system with random, non-existent keys that bypass the cache and hit the database.
-
-We employ a **Negative Cache** strategy powered by **`moka`**:
-- **Caching Absence**: We explicitly cache the *absence* of a PID. If a PID is not found in the DB, we record that fact in memory with a TTL (Time-To-Live).
-- **High-Performance Concurrency**: Using `moka` gives us a high-throughput, lock-free cache that scales with Actix-Web's async runtime.
-- **Grace Windows**: To handle race conditions (e.g., a user checking status immediately after payment), the cache design allows for "grace periods" or re-checks, balancing defense with user experience.
-
-This transforms a potential DoS vector into a cheap memory lookup.
+With users arriving via Tor (no IP-based throttling), the front door must reject random PIDs cheaply and without letting attackers pollute state. The current design replaces negative caching with a **Bloom-only, positive cache** posture:
+- **Zero False Negatives**: A Bloom filter (sized via `API_PID_BLOOM_ENTRIES`/`API_PID_BLOOM_FP_RATE`) sits ahead of storage. A Bloom negative returns 404 immediately—no cache writes, no DB touch.
+- **Positive-Only Cache**: `moka` stores known-good PIDs (prewarmed from storage/monitor and updated on confirmed payments). Unknown probes never enter the cache or Bloom, preventing attacker-supplied PIDs from consuming memory.
+- **DoS Degradation Path**: If the Bloom false-positive rate drifts upward (from attackers funding many unique PIDs), the system gracefully degrades to more DB lookups; correctness is preserved because we never allow false negatives.
+- **Operational Hooks**: Sizing and telemetry live in the API bootstrap (`estimate_bloom_bytes`, `api_redeem_bloom_db_miss_total`), and the embedded monitor updates Bloom/cache as soon as payments are ingested.
 
 ## 4. Unified Observability
 
