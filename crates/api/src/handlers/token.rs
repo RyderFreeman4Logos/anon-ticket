@@ -4,13 +4,15 @@ use anon_ticket_domain::storage::TokenStore;
 use chrono::{DateTime, Utc};
 use metrics::counter;
 use serde::{Deserialize, Serialize};
+use strum_macros::AsRefStr;
 
 use crate::state::AppState;
 
 use super::ApiError;
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone, Copy, AsRefStr)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum TokenState {
     Active,
     Revoked,
@@ -48,10 +50,7 @@ pub async fn token_status_handler(
     } else {
         TokenState::Active
     };
-    let status_tag = match status {
-        TokenState::Active => "active",
-        TokenState::Revoked => "revoked",
-    };
+    let status_tag = status.as_ref().to_owned();
     counter!("api_token_requests_total", 1, "endpoint" => "status", "status" => status_tag);
     Ok(HttpResponse::Ok().json(TokenStatusResponse {
         status,
