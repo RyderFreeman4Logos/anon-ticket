@@ -14,7 +14,7 @@ The application bootstraps two distinct `actix-web` servers within the same proc
 - **Routes**:
     - `POST /api/v1/redeem`: Exchange a Payment ID for a Service Token.
     - `GET /api/v1/token/{token}`: Introspect token status/balance.
-- **Security**: No privileged actions allowed. Heavy caching and rate-limiting ready.
+- **Security**: No privileged actions allowed. Uses Negative Caching to prevent database exhaustion attacks.
 
 ### 1.2. Internal Listener
 - **Purpose**: Serve monitoring agents (Prometheus) and admin scripts.
