@@ -264,3 +264,10 @@ d33171d... docs(api): clarify dos protection strategy
 - Validated configuration to ensure cache TTL is never shorter than the negative-grace window; surfaced a bootstrap error when misconfigured.
 - Wired application bootstrap to honor the configured TTL/capacity and pass the grace window into handler state; made cache defaults public and adjustable via `InMemoryPidCache::with_capacity`.
 - Updated `.env.example` and API/Root READMEs with the new knobs; refreshed integration/config tests to cover parsing, invalid numbers, and dynamic grace handling. Verified via `cargo fmt --all`, `cargo clippy --workspace --all-features -- -D warnings`, and `cargo test --all --all-features`.
+
+816101f feat(api): add pid bloom filter
+
+- Added domain-level `PidBloom` wrapper (Atomic Bloom) with config validation and no-false-negative semantics; exposed env knobs `API_PID_BLOOM_ENTRIES` and `API_PID_BLOOM_FP_RATE` (defaults 100k / 0.01).
+- Redeem handler now consults Bloom to avoid blocking real payments during negative-cache grace while still allowing false positives; Bloom is populated on successful or known-present lookups.
+- `ApiConfig` and bootstrap wire the Bloom filter and PID cache together, maintaining TTL ≥ grace invariant and disabling Bloom when entries set to 0.
+- Updated `.env.example`, README、API README, TODOs (MidTerm-33 done), plus config/unit/integration tests to cover new parsing paths and Bloom behavior. Verified with `cargo fmt --all`, `cargo clippy --workspace --all-features -- -D warnings`, `cargo test --all --all-features`.
