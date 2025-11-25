@@ -251,3 +251,9 @@ e33dd7c... docs(api): add design and readme
 d33171d... docs(api): clarify dos protection strategy
 
 - Clarified in `crates/api/DESIGN.md` that DoS protection relies on internal Negative Caching rather than IP rate-limiting (which is ineffective for Tor services).
+
+2252f95 docs(todo): plan pid cache tuning
+
+- Planned PID negative-cache tuning: add `API_PID_CACHE_NEGATIVE_GRACE_MS` (bounded >0) surfaced via `ApiConfig`, and keep handlers enforcing `grace <= ttl` so cold-start floods are throttled without blocking fresh payments too long.
+- Planned cache configurability: introduce `API_PID_CACHE_TTL_SECS` and `API_PID_CACHE_CAPACITY` to tune positive/negative cache retention and memory footprint, with validation that TTL stays above the grace window and docs with sizing guidance.
+- Planned Bloom filter layer: design a PID Bloom filter with zero false negatives (false positives acceptable), fed by cache/storage and tunable for FP rate/refresh cadence, to cut DB load under spray traffic while preserving correctness.
