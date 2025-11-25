@@ -198,17 +198,15 @@ pub enum BootstrapError {
     Join(String),
 }
 
-#[cfg(unix)]
 fn cleanup_socket(path: &str) -> std::io::Result<()> {
-    let socket_path = Path::new(path);
-    if socket_path.exists() {
-        fs::remove_file(socket_path)?;
+    cfg_if! {
+        if #[cfg(unix)] {
+            let socket_path = Path::new(path);
+            if socket_path.exists() {
+                fs::remove_file(socket_path)?;
+            }
+        }
     }
-    Ok(())
-}
-
-#[cfg(not(unix))]
-fn cleanup_socket(_path: &str) -> std::io::Result<()> {
     Ok(())
 }
 
