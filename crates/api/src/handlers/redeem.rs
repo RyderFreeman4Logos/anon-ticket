@@ -33,19 +33,13 @@ pub async fn redeem_handler(
         counter!("api_redeem_requests_total", 1, "status" => "invalid_pid");
     })?;
 
-    if !state.cache().might_contain(&pid) {
-        let bloom_positive = state.bloom().is_some_and(|b| b.might_contain(&pid));
-        let should_short_circuit = state
-            .cache()
-            .negative_entry_age(&pid)
-            .is_some_and(|age| age < state.negative_grace() && !bloom_positive);
-        if should_short_circuit {
-            counter!("api_redeem_cache_hints_total", 1, "hint" => "absent_blocked");
-            counter!("api_redeem_requests_total", 1, "status" => "cache_absent");
+    if let Some(bloom) = state.bloom() {
+        if !bloom.might_contain(&pid) {
+            counter!("api_redeem_cache_hints_total", 1, "hint" => "bloom_absent");
+            counter!("api_redeem_requests_total", 1, "status" => "bloom_absent");
             return Err(ApiError::NotFound);
         }
-
-        counter!("api_redeem_cache_hints_total", 1, "hint" => "absent_probe");
+        counter!("api_redeem_cache_hints_total", 1, "hint" => "bloom_positive");
     }
 
     match state.storage().claim_payment(&pid).await? {
@@ -94,8 +88,6 @@ async fn handle_absent(state: &AppState, pid: PaymentId) -> Result<HttpResponse,
             Err(ApiError::NotFound)
         }
         None => {
-            state.cache().mark_absent(&pid);
-            state.insert_bloom(&pid);
             counter!("api_redeem_requests_total", 1, "status" => "not_found");
             Err(ApiError::NotFound)
         }

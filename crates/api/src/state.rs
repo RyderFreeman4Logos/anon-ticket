@@ -6,14 +6,12 @@ use anon_ticket_domain::services::{
     telemetry::TelemetryGuard,
 };
 use anon_ticket_storage::SeaOrmStorage;
-use std::time::Duration;
 
 #[derive(Clone)]
 pub struct AppState {
     storage: SeaOrmStorage,
     cache: Arc<InMemoryPidCache>,
     telemetry: TelemetryGuard,
-    negative_grace: Duration,
     bloom: Option<Arc<PidBloom>>,
 }
 
@@ -22,14 +20,12 @@ impl AppState {
         storage: SeaOrmStorage,
         cache: Arc<InMemoryPidCache>,
         telemetry: TelemetryGuard,
-        negative_grace: Duration,
         bloom: Option<Arc<PidBloom>>,
     ) -> Self {
         Self {
             storage,
             cache,
             telemetry,
-            negative_grace,
             bloom,
         }
     }
@@ -44,10 +40,6 @@ impl AppState {
 
     pub fn telemetry(&self) -> &TelemetryGuard {
         &self.telemetry
-    }
-
-    pub fn negative_grace(&self) -> Duration {
-        self.negative_grace
     }
 
     pub fn bloom(&self) -> Option<&PidBloom> {

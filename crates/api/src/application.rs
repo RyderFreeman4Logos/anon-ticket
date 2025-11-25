@@ -24,7 +24,6 @@ use crate::{
     state::AppState,
 };
 
-const DEFAULT_PID_CACHE_NEGATIVE_GRACE_MS: u64 = 500;
 const DEFAULT_PID_BLOOM_ENTRIES: u64 = 100_000;
 const DEFAULT_PID_BLOOM_FP_RATE: f64 = 0.01;
 
@@ -42,17 +41,6 @@ pub async fn run() -> Result<(), BootstrapError> {
     let cache_capacity = api_config
         .pid_cache_capacity()
         .unwrap_or(InMemoryPidCache::DEFAULT_CAPACITY);
-    let negative_grace = Duration::from_millis(
-        api_config
-            .pid_cache_negative_grace_ms()
-            .unwrap_or(DEFAULT_PID_CACHE_NEGATIVE_GRACE_MS),
-    );
-    if cache_ttl < negative_grace {
-        return Err(BootstrapError::InvalidCacheConfig(
-            "API_PID_CACHE_TTL_SECS must be >= API_PID_CACHE_NEGATIVE_GRACE_MS (converted to seconds)"
-                .to_string(),
-        ));
-    }
     let cache = Arc::new(InMemoryPidCache::with_capacity(cache_ttl, cache_capacity));
     let bloom_entries = api_config
         .pid_bloom_entries()
@@ -87,7 +75,7 @@ pub async fn run() -> Result<(), BootstrapError> {
         None
     };
 
-    let state = AppState::new(storage, cache, telemetry.clone(), negative_grace, bloom);
+    let state = AppState::new(storage, cache, telemetry.clone(), bloom);
 
     let include_metrics_on_public = !api_config.has_internal_listener();
     let public_state = state.clone();
@@ -214,8 +202,6 @@ pub enum BootstrapError {
     Monitor(#[from] anon_ticket_monitor::worker::MonitorError),
     #[error(transparent)]
     Io(#[from] std::io::Error),
-    #[error("invalid cache configuration: {0}")]
-    InvalidCacheConfig(String),
     #[error("invalid bloom filter configuration: {0}")]
     InvalidBloomConfig(String),
     #[error("task join error: {0}")]

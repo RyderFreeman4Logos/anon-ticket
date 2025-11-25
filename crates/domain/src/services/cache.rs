@@ -1,4 +1,4 @@
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use fastbloom::AtomicBloomFilter;
 use moka::sync::Cache;
@@ -15,45 +15,25 @@ pub enum PidPresence {
 
 /// Trait describing a PID cache/bloom filter abstraction.
 pub trait PidCache: Send + Sync {
-    /// Returns `true` if the PID might exist (i.e. not known absent).
+    /// Returns `true` if the PID is known/predicted to exist.
     fn might_contain(&self, pid: &PaymentId) -> bool;
 
     /// Marks the PID as present (remove any negative entries).
     fn mark_present(&self, pid: &PaymentId);
-
-    /// Marks the PID as absent for a period of time.
-    fn mark_absent(&self, pid: &PaymentId);
-
-    /// Returns how long the PID has been cached as absent, if the implementation tracks it.
-    fn negative_entry_age(&self, _pid: &PaymentId) -> Option<Duration> {
-        None
-    }
 }
 
 #[derive(Debug)]
 pub struct InMemoryPidCache {
     positives: Cache<[u8; 8], ()>,
-    negatives: Cache<[u8; 8], Instant>,
 }
 
 impl PidCache for InMemoryPidCache {
     fn might_contain(&self, pid: &PaymentId) -> bool {
-        !self.negatives.contains_key(pid.as_bytes())
+        self.positives.contains_key(pid.as_bytes())
     }
 
     fn mark_present(&self, pid: &PaymentId) {
         self.positives.insert(*pid.as_bytes(), ());
-        self.negatives.invalidate(pid.as_bytes());
-    }
-
-    fn mark_absent(&self, pid: &PaymentId) {
-        self.negatives.insert(*pid.as_bytes(), Instant::now());
-    }
-
-    fn negative_entry_age(&self, pid: &PaymentId) -> Option<Duration> {
-        self.negatives
-            .get(pid.as_bytes())
-            .map(|inserted| Instant::now().saturating_duration_since(inserted))
     }
 }
 
@@ -69,10 +49,6 @@ impl InMemoryPidCache {
         let capacity = capacity.max(1);
         Self {
             positives: Cache::builder()
-                .time_to_live(ttl)
-                .max_capacity(capacity)
-                .build(),
-            negatives: Cache::builder()
                 .time_to_live(ttl)
                 .max_capacity(capacity)
                 .build(),
@@ -138,25 +114,13 @@ mod tests {
     use crate::PaymentId;
 
     #[test]
-    fn marks_presence_and_absence() {
+    fn marks_presence() {
         let cache = InMemoryPidCache::default();
         let pid = PaymentId::new("0123456789abcdef");
-        assert!(cache.might_contain(&pid));
-        cache.mark_absent(&pid);
         assert!(!cache.might_contain(&pid));
         cache.mark_present(&pid);
         assert!(cache.might_contain(&pid));
         assert!(cache.known_present(&pid));
-    }
-
-    #[test]
-    fn negatives_expire() {
-        let cache = InMemoryPidCache::new(Duration::from_millis(10));
-        let pid = PaymentId::new("fedcba9876543210");
-        cache.mark_absent(&pid);
-        assert!(!cache.might_contain(&pid));
-        std::thread::sleep(Duration::from_millis(15));
-        assert!(cache.might_contain(&pid));
     }
 
     #[test]

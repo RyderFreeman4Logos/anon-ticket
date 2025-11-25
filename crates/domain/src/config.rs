@@ -15,7 +15,6 @@ pub struct ApiConfig {
     internal_unix_socket: Option<String>,
     pid_cache_ttl_secs: Option<u64>,
     pid_cache_capacity: Option<u64>,
-    pid_cache_negative_grace_ms: Option<u64>,
     pid_bloom_entries: Option<u64>,
     pid_bloom_fp_rate: Option<f64>,
 }
@@ -31,7 +30,6 @@ impl ApiConfig {
             internal_unix_socket: get_optional_var("API_INTERNAL_UNIX_SOCKET"),
             pid_cache_ttl_secs: get_optional_u64("API_PID_CACHE_TTL_SECS")?,
             pid_cache_capacity: get_optional_u64("API_PID_CACHE_CAPACITY")?,
-            pid_cache_negative_grace_ms: get_optional_u64("API_PID_CACHE_NEGATIVE_GRACE_MS")?,
             pid_bloom_entries: get_optional_u64("API_PID_BLOOM_ENTRIES")?,
             pid_bloom_fp_rate: get_optional_f64("API_PID_BLOOM_FP_RATE")?,
         })
@@ -67,10 +65,6 @@ impl ApiConfig {
 
     pub fn pid_cache_capacity(&self) -> Option<u64> {
         self.pid_cache_capacity
-    }
-
-    pub fn pid_cache_negative_grace_ms(&self) -> Option<u64> {
-        self.pid_cache_negative_grace_ms
     }
 
     pub fn pid_bloom_entries(&self) -> Option<u64> {
@@ -264,7 +258,6 @@ mod tests {
         std::env::remove_var("API_INTERNAL_UNIX_SOCKET");
         std::env::remove_var("API_PID_CACHE_TTL_SECS");
         std::env::remove_var("API_PID_CACHE_CAPACITY");
-        std::env::remove_var("API_PID_CACHE_NEGATIVE_GRACE_MS");
         std::env::remove_var("API_PID_BLOOM_ENTRIES");
         std::env::remove_var("API_PID_BLOOM_FP_RATE");
         std::env::set_var("MONERO_RPC_URL", "http://localhost:18082/json_rpc");
@@ -299,7 +292,6 @@ mod tests {
         std::env::set_var("API_INTERNAL_UNIX_SOCKET", "/tmp/api-internal.sock");
         std::env::set_var("API_PID_CACHE_TTL_SECS", "120");
         std::env::set_var("API_PID_CACHE_CAPACITY", "200000");
-        std::env::set_var("API_PID_CACHE_NEGATIVE_GRACE_MS", "750");
         std::env::set_var("API_PID_BLOOM_ENTRIES", "500000");
         std::env::set_var("API_PID_BLOOM_FP_RATE", "0.01");
 
@@ -313,14 +305,12 @@ mod tests {
         assert!(config.has_internal_listener());
         assert_eq!(config.pid_cache_ttl_secs(), Some(120));
         assert_eq!(config.pid_cache_capacity(), Some(200_000));
-        assert_eq!(config.pid_cache_negative_grace_ms(), Some(750));
 
         std::env::remove_var("API_UNIX_SOCKET");
         std::env::remove_var("API_INTERNAL_BIND_ADDRESS");
         std::env::remove_var("API_INTERNAL_UNIX_SOCKET");
         std::env::remove_var("API_PID_CACHE_TTL_SECS");
         std::env::remove_var("API_PID_CACHE_CAPACITY");
-        std::env::remove_var("API_PID_CACHE_NEGATIVE_GRACE_MS");
         std::env::remove_var("API_PID_BLOOM_ENTRIES");
         std::env::remove_var("API_PID_BLOOM_FP_RATE");
         set_env();

@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 
 use actix_web::{body::to_bytes, test, web, App};
 use anon_ticket_domain::model::{
@@ -8,18 +8,15 @@ use anon_ticket_domain::services::{
     cache::{InMemoryPidCache, PidBloom},
     telemetry::{init_telemetry, TelemetryConfig, TelemetryGuard},
 };
-use anon_ticket_domain::{PaymentStore, PidCache, TokenStore};
+use anon_ticket_domain::{PaymentStore, TokenStore};
 use anon_ticket_storage::SeaOrmStorage;
 use chrono::Utc;
-use tokio::time::sleep;
 
 use crate::handlers::{
     redeem::{redeem_handler, RedeemRequest, RedeemResponse},
     token::{revoke_token_handler, token_status_handler, RevokeRequest, TokenStatusResponse},
 };
 use crate::state::AppState;
-
-const DEFAULT_NEGATIVE_GRACE: Duration = Duration::from_millis(500);
 
 fn test_pid() -> PaymentId {
     PaymentId::parse("0123456789abcdef").unwrap()
@@ -39,36 +36,20 @@ fn telemetry() -> TelemetryGuard {
 fn build_state(
     storage: SeaOrmStorage,
     cache: Arc<InMemoryPidCache>,
-    negative_grace: Duration,
     bloom: Option<Arc<PidBloom>>,
 ) -> AppState {
     let telemetry = telemetry();
-    AppState::new(storage, cache, telemetry.clone(), negative_grace, bloom)
+    AppState::new(storage, cache, telemetry.clone(), bloom)
 }
 
 fn with_cache(storage: SeaOrmStorage) -> AppState {
-    build_state(
-        storage,
-        Arc::new(InMemoryPidCache::default()),
-        DEFAULT_NEGATIVE_GRACE,
-        None,
-    )
-}
-
-fn with_cache_ttl(storage: SeaOrmStorage, ttl: Duration) -> AppState {
-    build_state(
-        storage,
-        Arc::new(InMemoryPidCache::new(ttl)),
-        DEFAULT_NEGATIVE_GRACE,
-        None,
-    )
+    build_state(storage, Arc::new(InMemoryPidCache::default()), None)
 }
 
 fn with_bloom(storage: SeaOrmStorage) -> AppState {
     build_state(
         storage,
         Arc::new(InMemoryPidCache::default()),
-        DEFAULT_NEGATIVE_GRACE,
         PidBloom::new(10_000, 0.01).ok().map(Arc::new),
     )
 }
@@ -200,22 +181,27 @@ async fn duplicate_claims_return_existing_token() {
 }
 
 #[actix_web::test]
-async fn cached_absence_short_circuits_requests() {
+async fn bloom_negative_short_circuits_even_if_payment_exists() {
     let storage = storage().await;
     let pid = test_pid();
-    let state = with_cache(storage.clone());
-    state.cache().mark_absent(&pid);
-
     storage
         .insert_payment(NewPayment {
             pid: pid.clone(),
-            txid: "tx-new".into(),
-            amount: 7,
-            block_height: 55,
+            txid: "tx-bloom-negative".into(),
+            amount: 9,
+            block_height: 77,
             detected_at: Utc::now(),
         })
         .await
         .unwrap();
+
+    let bloom = Arc::new(PidBloom::new(10_000, 0.01).unwrap());
+    // intentionally do not insert pid into bloom
+    let state = build_state(
+        storage,
+        Arc::new(InMemoryPidCache::default()),
+        Some(bloom.clone()),
+    );
 
     let app = test::init_service(
         App::new()
@@ -223,6 +209,7 @@ async fn cached_absence_short_circuits_requests() {
             .route("/api/v1/redeem", web::post().to(redeem_handler)),
     )
     .await;
+
     let req = test::TestRequest::post()
         .uri("/api/v1/redeem")
         .set_json(&RedeemRequest {
@@ -231,27 +218,28 @@ async fn cached_absence_short_circuits_requests() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), actix_web::http::StatusCode::NOT_FOUND);
+    // bloom remains negative
+    assert!(!bloom.might_contain(&pid));
 }
 
 #[actix_web::test]
-async fn cached_absence_grace_window_allows_redemption() {
+async fn bloom_positive_allows_redemption() {
     let storage = storage().await;
     let pid = test_pid();
-    let state = with_cache_ttl(storage.clone(), Duration::from_secs(60));
-    state.cache().mark_absent(&pid);
-
     storage
         .insert_payment(NewPayment {
             pid: pid.clone(),
-            txid: "tx-grace".into(),
+            txid: "tx-bloom-positive".into(),
             amount: 9,
-            block_height: 56,
+            block_height: 77,
             detected_at: Utc::now(),
         })
         .await
         .unwrap();
 
-    sleep(DEFAULT_NEGATIVE_GRACE + Duration::from_millis(50)).await;
+    let bloom = Arc::new(PidBloom::new(10_000, 0.01).unwrap());
+    bloom.insert(&pid);
+    let state = build_state(storage, Arc::new(InMemoryPidCache::default()), Some(bloom));
 
     let app = test::init_service(
         App::new()
@@ -259,6 +247,7 @@ async fn cached_absence_grace_window_allows_redemption() {
             .route("/api/v1/redeem", web::post().to(redeem_handler)),
     )
     .await;
+
     let req = test::TestRequest::post()
         .uri("/api/v1/redeem")
         .set_json(&RedeemRequest {
@@ -267,109 +256,35 @@ async fn cached_absence_grace_window_allows_redemption() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
-    let body = to_bytes(resp.into_body()).await.unwrap();
-    let parsed: RedeemResponse = serde_json::from_slice(&body).unwrap();
-    assert_eq!(parsed.status, "success");
 }
 
 #[actix_web::test]
-async fn cached_absence_expires_and_allows_redemption() {
+async fn missing_pid_does_not_pollute_bloom() {
     let storage = storage().await;
     let pid = test_pid();
-    let state = with_cache_ttl(storage.clone(), Duration::from_millis(20));
-    state.cache().mark_absent(&pid);
-
-    storage
-        .insert_payment(NewPayment {
-            pid: pid.clone(),
-            txid: "tx-expire".into(),
-            amount: 11,
-            block_height: 56,
-            detected_at: Utc::now(),
-        })
-        .await
-        .unwrap();
-
-    let app = test::init_service(
-        App::new()
-            .app_data(web::Data::new(state.clone()))
-            .route("/api/v1/redeem", web::post().to(redeem_handler)),
-    )
-    .await;
-
-    let blocked = test::TestRequest::post()
-        .uri("/api/v1/redeem")
-        .set_json(&RedeemRequest {
-            pid: pid.clone().into_inner(),
-        })
-        .to_request();
-    let blocked_resp = test::call_service(&app, blocked).await;
-    assert_eq!(
-        blocked_resp.status(),
-        actix_web::http::StatusCode::NOT_FOUND
+    let bloom = Arc::new(PidBloom::new(10_000, 0.01).unwrap());
+    let state = build_state(
+        storage,
+        Arc::new(InMemoryPidCache::default()),
+        Some(bloom.clone()),
     );
 
-    sleep(Duration::from_millis(30)).await;
-
-    let allowed = test::TestRequest::post()
-        .uri("/api/v1/redeem")
-        .set_json(&RedeemRequest {
-            pid: pid.into_inner(),
-        })
-        .to_request();
-    let allowed_resp = test::call_service(&app, allowed).await;
-    assert_eq!(allowed_resp.status(), actix_web::http::StatusCode::OK);
-    let body = to_bytes(allowed_resp.into_body()).await.unwrap();
-    let parsed: RedeemResponse = serde_json::from_slice(&body).unwrap();
-    assert_eq!(parsed.status, "success");
-}
-
-#[actix_web::test]
-async fn bloom_allows_redeem_during_negative_grace() {
-    let storage = storage().await;
-    let pid = test_pid();
-    // First request: absent, mark negative and populate bloom
-    let initial_state = with_bloom(storage.clone());
     let app = test::init_service(
         App::new()
-            .app_data(web::Data::new(initial_state))
+            .app_data(web::Data::new(state))
             .route("/api/v1/redeem", web::post().to(redeem_handler)),
     )
     .await;
 
-    let first = test::TestRequest::post()
+    let req = test::TestRequest::post()
         .uri("/api/v1/redeem")
         .set_json(&RedeemRequest {
             pid: pid.clone().into_inner(),
         })
         .to_request();
-    let first_resp = test::call_service(&app, first).await;
-    assert_eq!(first_resp.status(), actix_web::http::StatusCode::NOT_FOUND);
-
-    // Payment appears after first attempt
-    storage
-        .insert_payment(NewPayment {
-            pid: pid.clone(),
-            txid: "tx-bloom".into(),
-            amount: 9,
-            block_height: 77,
-            detected_at: Utc::now(),
-        })
-        .await
-        .unwrap();
-
-    // Second request arrives within grace window; bloom should bypass short circuit
-    let second = test::TestRequest::post()
-        .uri("/api/v1/redeem")
-        .set_json(&RedeemRequest {
-            pid: pid.into_inner(),
-        })
-        .to_request();
-    let second_resp = test::call_service(&app, second).await;
-    assert_eq!(second_resp.status(), actix_web::http::StatusCode::OK);
-    let body = to_bytes(second_resp.into_body()).await.unwrap();
-    let parsed: RedeemResponse = serde_json::from_slice(&body).unwrap();
-    assert_eq!(parsed.status, "success");
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), actix_web::http::StatusCode::NOT_FOUND);
+    assert!(!bloom.might_contain(&pid));
 }
 
 #[actix_web::test]
