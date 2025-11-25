@@ -48,14 +48,6 @@ fn with_cache(storage: SeaOrmStorage) -> AppState {
     build_state(storage, Arc::new(InMemoryPidCache::default()), None)
 }
 
-fn with_bloom(storage: SeaOrmStorage) -> AppState {
-    build_state(
-        storage,
-        Arc::new(InMemoryPidCache::default()),
-        PidBloom::new(10_000, 0.01).ok().map(Arc::new),
-    )
-}
-
 async fn insert_token(storage: &SeaOrmStorage) -> ServiceToken {
     let token =
         ServiceToken::parse("deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
