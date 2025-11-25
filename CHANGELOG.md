@@ -237,6 +237,12 @@ e6c663e76c33880ad4cd7e510a50da0f19038359 feat(domain): add wasm feature flag and
 
 - Updated `DESIGN.md` and `README.md` to accurately describe the 8-byte Compact PID schema.
 
+5691e1e fix(metrics): emit baseline gauges
+
+- **Observability**: Monitor loop now records `monitor_wallet_height` and `monitor_last_height` every poll so `/metrics` is non-empty and exposes scan progress even before the first batch is processed.
+- **API**: API bootstrap emits an `api_up` gauge immediately after telemetry is installed, ensuring the internal metrics surface returns content right after startup.
+- **Verification**: Ran `cargo fmt --all`, `cargo clippy --workspace --all-features -- -D warnings`, and `cargo test --all --all-features` (the upstream `sqlx-postgres` future-incompat warning remains unchanged).
+
 4c84cab5c410c624f4e714833f2ba0009488dd40 feat(monitor): make poll interval configurable
 
 - **Config**: Added `MONITOR_POLL_INTERVAL_SECS` to `BootstrapConfig` with a 5s default and tests covering default and override cases.
