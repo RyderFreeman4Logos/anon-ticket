@@ -16,6 +16,7 @@ use anon_ticket_domain::services::{
 use anon_ticket_domain::PidCache;
 use anon_ticket_monitor::{build_rpc_source, run_monitor, worker::MonitorHooks};
 use anon_ticket_storage::SeaOrmStorage;
+use cfg_if::cfg_if;
 use thiserror::Error;
 use tracing::{info, warn};
 
@@ -81,59 +82,38 @@ pub async fn run() -> Result<(), BootstrapError> {
 
     let state = AppState::new(storage, cache, telemetry.clone(), bloom);
 
-    let include_metrics_on_public = !api_config.has_internal_listener();
     let public_state = state.clone();
-    let mut public_server = HttpServer::new(move || {
-        let mut app = App::new()
+    let public_server = HttpServer::new(move || {
+        App::new()
             .app_data(web::Data::new(public_state.clone()))
             .wrap(Logger::default())
             .route("/api/v1/redeem", web::post().to(redeem_handler))
-            .route("/api/v1/token/{token}", web::get().to(token_status_handler));
-
-        if include_metrics_on_public {
-            app = app.route("/metrics", web::get().to(metrics_handler));
-        }
-
-        app
+            .route("/api/v1/token/{token}", web::get().to(token_status_handler))
     });
 
-    #[cfg(unix)]
-    {
-        if let Some(socket) = api_config.api_unix_socket() {
-            cleanup_socket(socket)?;
-            public_server = public_server.bind_uds(socket)?;
-        } else {
-            public_server = public_server.bind(api_config.api_bind_address())?;
-        }
-    }
+    let internal_state = state.clone();
+    let internal_server = HttpServer::new(move || {
+        App::new()
+            .app_data(web::Data::new(internal_state.clone()))
+            .wrap(Logger::default())
+            .route("/metrics", web::get().to(metrics_handler))
+            .route(
+                "/api/v1/token/{token}/revoke",
+                web::post().to(revoke_token_handler),
+            )
+    });
 
-    #[cfg(not(unix))]
-    {
-        if let Some(socket) = api_config.api_unix_socket() {
-            return Err(BootstrapError::Io(std::io::Error::other(format!(
-                "unix socket '{socket}' requested but this platform does not support it"
-            ))));
-        }
-        public_server = public_server.bind(api_config.api_bind_address())?;
-    }
+    cfg_if! {
+        if #[cfg(unix)] {
+            let mut public_server = public_server;
+            if let Some(socket) = api_config.api_unix_socket() {
+                cleanup_socket(socket)?;
+                public_server = public_server.bind_uds(socket)?;
+            } else {
+                public_server = public_server.bind(api_config.api_bind_address())?;
+            }
 
-    let public_server = public_server.run();
-
-    let internal_server = if api_config.has_internal_listener() {
-        let internal_state = state.clone();
-        let mut internal_server = HttpServer::new(move || {
-            App::new()
-                .app_data(web::Data::new(internal_state.clone()))
-                .wrap(Logger::default())
-                .route("/metrics", web::get().to(metrics_handler))
-                .route(
-                    "/api/v1/token/{token}/revoke",
-                    web::post().to(revoke_token_handler),
-                )
-        });
-
-        #[cfg(unix)]
-        {
+            let mut internal_server = internal_server;
             if let Some(socket) = api_config.internal_unix_socket() {
                 cleanup_socket(socket)?;
                 internal_server = internal_server.bind_uds(socket)?;
@@ -141,52 +121,58 @@ pub async fn run() -> Result<(), BootstrapError> {
                 internal_server = internal_server.bind(addr)?;
             } else {
                 return Err(BootstrapError::Io(std::io::Error::other(
-                    "internal listener configured but no bind target provided",
+                    "internal listener required but no bind target provided",
                 )));
             }
-        }
 
-        #[cfg(not(unix))]
-        {
+            let public_server = public_server.run();
+            let internal_server = internal_server.run();
+
+            if let Some(monitor_handle) = monitor_task {
+                tokio::try_join!(
+                    async { public_server.await.map_err(BootstrapError::Io) },
+                    async { internal_server.await.map_err(BootstrapError::Io) },
+                    monitor_join(monitor_handle),
+                )?;
+            } else {
+                tokio::try_join!(
+                    async { public_server.await.map_err(BootstrapError::Io) },
+                    async { internal_server.await.map_err(BootstrapError::Io) },
+                )?;
+            }
+        } else {
+            if let Some(socket) = api_config.api_unix_socket() {
+                return Err(BootstrapError::Io(std::io::Error::other(format!(
+                    "unix socket '{socket}' requested but this platform does not support it"
+                ))));
+            }
             if let Some(socket) = api_config.internal_unix_socket() {
                 return Err(BootstrapError::Io(std::io::Error::other(format!(
                     "internal unix socket '{socket}' requested but this platform does not support it"
                 ))));
             }
-            if let Some(addr) = api_config.internal_bind_address() {
-                internal_server = internal_server.bind(addr)?;
+
+            let public_server = public_server.bind(api_config.api_bind_address())?.run();
+            let internal_addr = api_config.internal_bind_address().ok_or_else(|| {
+                std::io::Error::other(
+                    "internal listener required but no TCP bind address provided for this platform",
+                )
+            })?;
+            let internal_server = internal_server.bind(internal_addr)?.run();
+
+            if let Some(monitor_handle) = monitor_task {
+                tokio::try_join!(
+                    async { public_server.await.map_err(BootstrapError::Io) },
+                    async { internal_server.await.map_err(BootstrapError::Io) },
+                    monitor_join(monitor_handle),
+                )?;
             } else {
-                return Err(BootstrapError::Io(std::io::Error::other(
-                    "internal listener configured but no bind target provided",
-                )));
+                tokio::try_join!(
+                    async { public_server.await.map_err(BootstrapError::Io) },
+                    async { internal_server.await.map_err(BootstrapError::Io) },
+                )?;
             }
         }
-
-        Some(internal_server.run())
-    } else {
-        None
-    };
-
-    if let Some(internal) = internal_server {
-        if let Some(monitor_handle) = monitor_task {
-            tokio::try_join!(
-                async { public_server.await.map_err(BootstrapError::Io) },
-                async { internal.await.map_err(BootstrapError::Io) },
-                monitor_join(monitor_handle),
-            )?;
-        } else {
-            tokio::try_join!(
-                async { public_server.await.map_err(BootstrapError::Io) },
-                async { internal.await.map_err(BootstrapError::Io) },
-            )?;
-        }
-    } else if let Some(monitor_handle) = monitor_task {
-        tokio::try_join!(
-            async { public_server.await.map_err(BootstrapError::Io) },
-            monitor_join(monitor_handle),
-        )?;
-    } else {
-        public_server.await?;
     }
 
     Ok(())

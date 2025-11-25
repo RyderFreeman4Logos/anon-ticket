@@ -22,12 +22,20 @@ pub struct ApiConfig {
 impl ApiConfig {
     /// Loads only the environment variables required by the API binary.
     pub fn load_from_env() -> Result<Self, ConfigError> {
+        let api_unix_socket = get_optional_var("API_UNIX_SOCKET");
+        let internal_bind_address = get_optional_var("API_INTERNAL_BIND_ADDRESS");
+        let internal_unix_socket = get_optional_var("API_INTERNAL_UNIX_SOCKET");
+
+        if internal_bind_address.is_none() && internal_unix_socket.is_none() {
+            return Err(ConfigError::MissingInternalListener);
+        }
+
         Ok(Self {
             database_url: get_required_var("DATABASE_URL")?,
             api_bind_address: get_required_var("API_BIND_ADDRESS")?,
-            api_unix_socket: get_optional_var("API_UNIX_SOCKET"),
-            internal_bind_address: get_optional_var("API_INTERNAL_BIND_ADDRESS"),
-            internal_unix_socket: get_optional_var("API_INTERNAL_UNIX_SOCKET"),
+            api_unix_socket,
+            internal_bind_address,
+            internal_unix_socket,
             pid_cache_ttl_secs: get_optional_u64("API_PID_CACHE_TTL_SECS")?,
             pid_cache_capacity: get_optional_u64("API_PID_CACHE_CAPACITY")?,
             pid_bloom_entries: get_optional_u64("API_PID_BLOOM_ENTRIES")?,
@@ -228,6 +236,10 @@ fn get_optional_f64(key: &'static str) -> Result<Option<f64>, ConfigError> {
 pub enum ConfigError {
     #[error("missing required environment variable `{key}`")]
     MissingVar { key: &'static str },
+    #[error(
+        "internal listener required: set API_INTERNAL_BIND_ADDRESS or API_INTERNAL_UNIX_SOCKET"
+    )]
+    MissingInternalListener,
     #[error("invalid integer in `{key}`: {source}")]
     InvalidNumber {
         key: &'static str,
@@ -254,7 +266,7 @@ mod tests {
         std::env::set_var("DATABASE_URL", "sqlite://test.db");
         std::env::set_var("API_BIND_ADDRESS", "127.0.0.1:8080");
         std::env::remove_var("API_UNIX_SOCKET");
-        std::env::remove_var("API_INTERNAL_BIND_ADDRESS");
+        std::env::set_var("API_INTERNAL_BIND_ADDRESS", "127.0.0.1:9090");
         std::env::remove_var("API_INTERNAL_UNIX_SOCKET");
         std::env::remove_var("API_PID_CACHE_TTL_SECS");
         std::env::remove_var("API_PID_CACHE_CAPACITY");
@@ -275,6 +287,7 @@ mod tests {
         std::env::remove_var("MONITOR_START_HEIGHT");
         std::env::set_var("DATABASE_URL", "sqlite://api-only.db");
         std::env::set_var("API_BIND_ADDRESS", "127.0.0.1:9999");
+        std::env::set_var("API_INTERNAL_BIND_ADDRESS", "127.0.0.1:9998");
 
         let config = ApiConfig::load_from_env().expect("api config loads");
         assert_eq!(config.database_url(), "sqlite://api-only.db");
@@ -313,6 +326,19 @@ mod tests {
         std::env::remove_var("API_PID_CACHE_CAPACITY");
         std::env::remove_var("API_PID_BLOOM_ENTRIES");
         std::env::remove_var("API_PID_BLOOM_FP_RATE");
+        set_env();
+    }
+
+    #[test]
+    fn api_config_requires_internal_listener() {
+        let _guard = ENV_GUARD.lock().unwrap();
+        set_env();
+        std::env::remove_var("API_INTERNAL_BIND_ADDRESS");
+        std::env::remove_var("API_INTERNAL_UNIX_SOCKET");
+
+        let err = ApiConfig::load_from_env().unwrap_err();
+        assert!(matches!(err, ConfigError::MissingInternalListener));
+
         set_env();
     }
 

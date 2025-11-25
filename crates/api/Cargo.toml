@@ -19,3 +19,4 @@ tokio.workspace = true
 thiserror.workspace = true
 metrics.workspace = true
 tracing.workspace = true
+cfg-if.workspace = true

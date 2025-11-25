@@ -142,13 +142,12 @@ that logs suspicious PID probes.
 
 ### Internal API Listener
 
-Set `API_INTERNAL_BIND_ADDRESS` or `API_INTERNAL_UNIX_SOCKET` to expose
-internal-only routes (currently `/metrics` and `POST /api/v1/token/{token}/revoke`)
-on a dedicated TCP port or Unix socket. This keeps operational/administrative
-endpoints away from Tor-exposed listeners while still allowing the public API to
-operate over TCP or UDS. If no internal listener is configured, `/metrics`
-remains available on the public listener for backward compatibility, while the
-revoke endpoint is disabled (public requests return 404).
+Set **either** `API_INTERNAL_BIND_ADDRESS` **or** `API_INTERNAL_UNIX_SOCKET` to
+expose internal-only routes (currently `/metrics` and `POST /api/v1/token/{token}/revoke`)
+on a dedicated TCP port or Unix socket. The internal listener is mandatory; the
+API will fail to start if neither variable is provided. This keeps
+operational/administrative endpoints away from Tor-exposed listeners while the
+public API serves only user-facing routes.
 
 ### Token Introspection & Revocation
 

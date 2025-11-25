@@ -14,7 +14,7 @@ The application bootstraps two distinct `actix-web` servers within the same proc
 - **Routes**:
     - `POST /api/v1/redeem`: Exchange a Payment ID for a Service Token.
     - `GET /api/v1/token/{token}`: Introspect token status/balance.
-- **Security**: No privileged actions allowed. Uses Negative Caching to prevent database exhaustion attacks.
+- **Security**: No privileged actions allowed. Bloom + positive cache only; Bloom negatives 404 immediately without touching storage.
 
 ### 1.2. Internal Listener
 - **Purpose**: Serve monitoring agents (Prometheus) and admin scripts.
@@ -22,7 +22,7 @@ The application bootstraps two distinct `actix-web` servers within the same proc
 - **Routes**:
     - `GET /metrics`: Prometheus scraping endpoint.
     - `POST /api/v1/token/{token}/revoke`: Administrative revocation of tokens.
-- **Security**: Implicitly trusted by network topology. The revocation endpoint allows setting `abuse_score`, which is a privileged action.
+- **Security**: Mandatory for boot; the API fails fast if neither `API_INTERNAL_BIND_ADDRESS` nor `API_INTERNAL_UNIX_SOCKET` is provided. The revocation endpoint allows setting `abuse_score`, which is a privileged action.
 
 ## 2. State Management
 

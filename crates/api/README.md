@@ -4,10 +4,10 @@ The HTTP REST gateway for the anon-ticket system. It provides endpoints for user
 
 ## 🚀 Features
 
-- **Dual-Listener**: Separates public traffic from internal admin/metrics traffic for "Defense in Depth".
+- **Dual-Listener (Mandatory)**: Public listener serves users; an internal listener is required for metrics/admin, enforcing network isolation.
 - **Unix Socket Support**: Native support for binding to Unix Domain Sockets, ideal for secure IPC with Nginx or Tor.
 - **Atomic Redemption**: Guarantees no double-spending of Payment IDs.
-- **DoS Protection**: Built-in negative caching to protect the database from invalid PID spam.
+- **DoS Protection**: Bloom + positive cache only (no negative cache) to reject unknown PIDs early without polluting the filter.
 
 ## 🛠️ Configuration
 
@@ -22,8 +22,8 @@ Configured via environment variables.
 ### Internal Interface
 | Variable | Description | Default |
 | :--- | :--- | :--- |
-| `API_INTERNAL_BIND_ADDRESS` | TCP address for admin/metrics (e.g. `127.0.0.1:9090`). | `None` (Disabled) |
-| `API_INTERNAL_UNIX_SOCKET` | Path to internal Unix socket. | `None` |
+| `API_INTERNAL_BIND_ADDRESS` | TCP address for admin/metrics (e.g. `127.0.0.1:9090`). | `None` (Required if no UDS) |
+| `API_INTERNAL_UNIX_SOCKET` | Path to internal Unix socket. | `None` (Required if no TCP) |
 
 ### Dependencies
 | Variable | Description | Required |
@@ -68,7 +68,7 @@ Prometheus metrics exposition.
 # Run locally with both ports open
 export DATABASE_URL=sqlite://ticket.db
 export API_BIND_ADDRESS=127.0.0.1:8080
-export INTERNAL_BIND_ADDRESS=127.0.0.1:9090
+export API_INTERNAL_BIND_ADDRESS=127.0.0.1:9090
 
 cargo run -p anon_ticket_api
 ```
