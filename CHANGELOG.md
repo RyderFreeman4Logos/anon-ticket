@@ -257,3 +257,10 @@ d33171d... docs(api): clarify dos protection strategy
 - Planned PID negative-cache tuning: add `API_PID_CACHE_NEGATIVE_GRACE_MS` (bounded >0) surfaced via `ApiConfig`, and keep handlers enforcing `grace <= ttl` so cold-start floods are throttled without blocking fresh payments too long.
 - Planned cache configurability: introduce `API_PID_CACHE_TTL_SECS` and `API_PID_CACHE_CAPACITY` to tune positive/negative cache retention and memory footprint, with validation that TTL stays above the grace window and docs with sizing guidance.
 - Planned Bloom filter layer: design a PID Bloom filter with zero false negatives (false positives acceptable), fed by cache/storage and tunable for FP rate/refresh cadence, to cut DB load under spray traffic while preserving correctness.
+
+6c6818a feat(api): make pid cache configurable
+
+- Added env-driven tuning for PID cache: `API_PID_CACHE_TTL_SECS`, `API_PID_CACHE_CAPACITY`, and `API_PID_CACHE_NEGATIVE_GRACE_MS` (ms) now feed `ApiConfig`, defaulting to 60s/100k/500ms.
+- Validated configuration to ensure cache TTL is never shorter than the negative-grace window; surfaced a bootstrap error when misconfigured.
+- Wired application bootstrap to honor the configured TTL/capacity and pass the grace window into handler state; made cache defaults public and adjustable via `InMemoryPidCache::with_capacity`.
+- Updated `.env.example` and API/Root READMEs with the new knobs; refreshed integration/config tests to cover parsing, invalid numbers, and dynamic grace handling. Verified via `cargo fmt --all`, `cargo clippy --workspace --all-features -- -D warnings`, and `cargo test --all --all-features`.
