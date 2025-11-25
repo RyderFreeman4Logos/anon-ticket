@@ -244,3 +244,7 @@ f09beac... chore(todo): plan monitor confirmation safety
 - Refactored the monitor loop to compute `safe_height = wallet_height - min_confirmations`, skip polling when the cursor is ahead of the safety window, clamp transfer fetches to an inclusive `[start, safe_height]` range, and persist the cursor no further than `safe_height + 1`.
 - Updated `TransferSource` to accept a max height, refreshed monitor docs/README and design notes, and checked off ShortTerm-30 in TODO.
 - Added unit tests covering confirmation gating and height advancement, plus config coverage; verified via `cargo fmt --all`, `cargo clippy --workspace --all-features -- -D warnings`, and `cargo test --all --all-features`.
+e33dd7c... docs(api): add design and readme
+
+- Added `crates/api/DESIGN.md` detailing the Dual-Listener architecture and security model.
+- Added `crates/api/README.md` with configuration reference and API specs.
