@@ -61,7 +61,9 @@ where
             }
         };
 
-        let safe_height = wallet_height.saturating_sub(min_confirmations);
+        let safe_height = wallet_height
+            .saturating_add(1)
+            .saturating_sub(min_confirmations);
 
         if height > safe_height {
             // wait for more confirmations before progressing
