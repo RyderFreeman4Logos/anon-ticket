@@ -312,3 +312,8 @@ f492bac fix(api): prefill bloom to bypass negative cache
 56161f0... docs(env): annotate example config with defaults
 
 - Expanded `.env.example` with detailed comments explaining each variable's purpose and default value (e.g., Bloom sizing, Poll Interval, Confirmations).
+86eda66 feat(domain): add integrated address cli
+
+- Added a small `gen_integrated_address` binary under `crates/domain/src/bin` that takes a primary Monero address, generates a fresh payment ID, and prints both the PID and integrated address for manual testing.
+- Kept the tool dependency-free by reusing existing domain logic; emits clear errors and non-zero exits on invalid input or entropy failures so it is safe for scripted use.
+- Verified via `cargo fmt --all`, `cargo clippy --workspace --all-features -- -D warnings`, and `cargo test --all --all-features` (noting the upstream `sqlx-postgres` future-incompat warning remains unchanged).
