@@ -40,9 +40,9 @@ fn build_state(
     storage: SeaOrmStorage,
     cache: Arc<InMemoryPidCache>,
     negative_grace: Duration,
+    bloom: Option<Arc<PidBloom>>,
 ) -> AppState {
     let telemetry = telemetry();
-    let bloom = PidBloom::new(10_000, 0.01).ok().map(Arc::new);
     AppState::new(storage, cache, telemetry.clone(), negative_grace, bloom)
 }
 
@@ -51,6 +51,7 @@ fn with_cache(storage: SeaOrmStorage) -> AppState {
         storage,
         Arc::new(InMemoryPidCache::default()),
         DEFAULT_NEGATIVE_GRACE,
+        None,
     )
 }
 
@@ -59,6 +60,16 @@ fn with_cache_ttl(storage: SeaOrmStorage, ttl: Duration) -> AppState {
         storage,
         Arc::new(InMemoryPidCache::new(ttl)),
         DEFAULT_NEGATIVE_GRACE,
+        None,
+    )
+}
+
+fn with_bloom(storage: SeaOrmStorage) -> AppState {
+    build_state(
+        storage,
+        Arc::new(InMemoryPidCache::default()),
+        DEFAULT_NEGATIVE_GRACE,
+        PidBloom::new(10_000, 0.01).ok().map(Arc::new),
     )
 }
 
@@ -309,6 +320,54 @@ async fn cached_absence_expires_and_allows_redemption() {
     let allowed_resp = test::call_service(&app, allowed).await;
     assert_eq!(allowed_resp.status(), actix_web::http::StatusCode::OK);
     let body = to_bytes(allowed_resp.into_body()).await.unwrap();
+    let parsed: RedeemResponse = serde_json::from_slice(&body).unwrap();
+    assert_eq!(parsed.status, "success");
+}
+
+#[actix_web::test]
+async fn bloom_allows_redeem_during_negative_grace() {
+    let storage = storage().await;
+    let pid = test_pid();
+    // First request: absent, mark negative and populate bloom
+    let initial_state = with_bloom(storage.clone());
+    let app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(initial_state))
+            .route("/api/v1/redeem", web::post().to(redeem_handler)),
+    )
+    .await;
+
+    let first = test::TestRequest::post()
+        .uri("/api/v1/redeem")
+        .set_json(&RedeemRequest {
+            pid: pid.clone().into_inner(),
+        })
+        .to_request();
+    let first_resp = test::call_service(&app, first).await;
+    assert_eq!(first_resp.status(), actix_web::http::StatusCode::NOT_FOUND);
+
+    // Payment appears after first attempt
+    storage
+        .insert_payment(NewPayment {
+            pid: pid.clone(),
+            txid: "tx-bloom".into(),
+            amount: 9,
+            block_height: 77,
+            detected_at: Utc::now(),
+        })
+        .await
+        .unwrap();
+
+    // Second request arrives within grace window; bloom should bypass short circuit
+    let second = test::TestRequest::post()
+        .uri("/api/v1/redeem")
+        .set_json(&RedeemRequest {
+            pid: pid.into_inner(),
+        })
+        .to_request();
+    let second_resp = test::call_service(&app, second).await;
+    assert_eq!(second_resp.status(), actix_web::http::StatusCode::OK);
+    let body = to_bytes(second_resp.into_body()).await.unwrap();
     let parsed: RedeemResponse = serde_json::from_slice(&body).unwrap();
     assert_eq!(parsed.status, "success");
 }

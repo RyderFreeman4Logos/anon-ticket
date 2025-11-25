@@ -95,6 +95,7 @@ async fn handle_absent(state: &AppState, pid: PaymentId) -> Result<HttpResponse,
         }
         None => {
             state.cache().mark_absent(&pid);
+            state.insert_bloom(&pid);
             counter!("api_redeem_requests_total", 1, "status" => "not_found");
             Err(ApiError::NotFound)
         }

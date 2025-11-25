@@ -271,3 +271,11 @@ d33171d... docs(api): clarify dos protection strategy
 - Redeem handler now consults Bloom to avoid blocking real payments during negative-cache grace while still allowing false positives; Bloom is populated on successful or known-present lookups.
 - `ApiConfig` and bootstrap wire the Bloom filter and PID cache together, maintaining TTL ≥ grace invariant and disabling Bloom when entries set to 0.
 - Updated `.env.example`, README、API README, TODOs (MidTerm-33 done), plus config/unit/integration tests to cover new parsing paths and Bloom behavior. Verified with `cargo fmt --all`, `cargo clippy --workspace --all-features -- -D warnings`, `cargo test --all --all-features`.
+
+TBD fix: bloom prepopulation
+
+- Review noted Bloom filter never fills before negative-cache grace check, so a PID marked absent stays blocked for the full grace window. Need to populate Bloom earlier (e.g., from monitor ingestion or before short-circuit), preserving “no false negatives” while keeping cache semantics intact.
+
+FIXME bloom prepopulation (unreleased)
+
+- Populate Bloom as soon as a PID is marked absent/present so negative-cache short-circuit can be bypassed when new payments arrive within the grace window; add integration test ensuring Bloom bypasses the grace window after monitor/storage updates.
