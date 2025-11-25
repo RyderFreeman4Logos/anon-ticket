@@ -14,6 +14,7 @@ that toolchain plus `clippy`/`rustfmt` is sufficient to reproduce CI locally.
 | `crates/domain`  | `anon_ticket_domain`  | lib  | Core payment + token primitives shared by every binary. |
 | `crates/api`     | `anon_ticket_api`     | bin  | Actix-based redemption and introspection HTTP surface. |
 | `crates/monitor` | `anon_ticket_monitor` | bin  | Monero wallet monitor that imports qualifying transfers. |
+| `crates/storage` | `anon_ticket_storage` | lib  | SeaORM-backed storage adapters and migrations for payments/tokens/monitor state. |
 
 ### Domain Crate Internals
 
@@ -142,12 +143,12 @@ that logs suspicious PID probes.
 
 ### Internal API Listener
 
-Set **either** `API_INTERNAL_BIND_ADDRESS` **or** `API_INTERNAL_UNIX_SOCKET` to
-expose internal-only routes (currently `/metrics` and `POST /api/v1/token/{token}/revoke`)
-on a dedicated TCP port or Unix socket. The internal listener is mandatory; the
-API will fail to start if neither variable is provided. This keeps
-operational/administrative endpoints away from Tor-exposed listeners while the
-public API serves only user-facing routes.
+Set **either** `API_INTERNAL_BIND_ADDRESS` **or** `API_INTERNAL_UNIX_SOCKET`
+(one must be provided) to expose internal-only routes (currently `/metrics` and
+`POST /api/v1/token/{token}/revoke`) on a dedicated TCP port or Unix socket.
+The API fails fast if neither is set, keeping operational/administrative
+endpoints off the public/Tor surface while the public API serves only
+user-facing routes.
 
 ### Token Introspection & Revocation
 
@@ -219,9 +220,10 @@ point `MONERO_RPC_URL` at that instance. The expected workflow for every
 deployment is:
 
 1. **Export address + view key from your hardware wallet.** Load the wallet in
-   `monero-wallet-cli` (e.g. `monero-wallet-cli --hw-device ledger`) and run
-   `address` plus `viewkey` to capture the primary address and private view key.
-   Never export the spend key; the hardware device keeps it offline.
+   `monero-wallet-cli` (omit `--hw-device ledger`—some devices block view-key
+   export) and run `address` plus `viewkey` to capture the primary address and
+   private view key. Never export the spend key; the hardware device keeps it
+   offline.
 2. **Generate a watch-only wallet file.** Use the captured details to build a
    read-only wallet: `monero-wallet-cli --generate-from-view-key \
    --restore-height <height> watch-only --address <primary-address> \
@@ -239,6 +241,9 @@ deployment is:
    `http://127.0.0.1:18082/json_rpc`) and `MONITOR_START_HEIGHT` to the block
    height where you want ingestion to begin. All other `.env` entries stay the
    same regardless of whether you run mainnet, stagenet, or testnet.
+
+For a Trezor-focused walkthrough, see
+[`crates/monitor/secure-monero-rpc-deployment.md`](crates/monitor/secure-monero-rpc-deployment.md).
 
 Because the monitor only calls `get_transfers`/`get_height`, it never needs the
 spend key. Using watch-only wallets should therefore be treated as the default

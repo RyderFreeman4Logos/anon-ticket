@@ -178,6 +178,10 @@ c7fc8f0... chore(todo): plan short-term dust filtering
 
 - Planned `ShortTerm-24` to implement a minimum payment amount filter in the monitor, mitigating resource exhaustion attacks from dust transactions.
 
+e8305da docs(readme): tighten internal listener docs, storage row, and HW wallet guidance
+
+- Added the storage crate to the workspace layout, clarified that either `API_INTERNAL_BIND_ADDRESS` or `API_INTERNAL_UNIX_SOCKET` is mandatory, and removed the `--hw-device ledger` hint in favor of a watch-only flow with a link to the Trezor-based guide (`crates/monitor/secure-monero-rpc-deployment.md`).
+
 e7d94df feat(api): enum token status + bloom sizing guidance
 
 - **API Contract**: `TokenStatusResponse.status` is now an enum (`active`/`revoked`, snake_case), and token revocation is idempotent—repeat requests return 200 with current state. Tests updated accordingly.

@@ -33,6 +33,7 @@ pub struct AppState {
     storage: SeaOrmStorage,        // Async DB Pool
     cache: Arc<InMemoryPidCache>,  // Shared positive cache (prewarmed)
     telemetry: TelemetryGuard,     // Shared Metrics Registry
+    bloom: Option<Arc<PidBloom>>,  // Bloom filter
 }
 ```
 
