@@ -178,6 +178,13 @@ c7fc8f0... chore(todo): plan short-term dust filtering
 
 - Planned `ShortTerm-24` to implement a minimum payment amount filter in the monitor, mitigating resource exhaustion attacks from dust transactions.
 
+e7d94df feat(api): enum token status + bloom sizing guidance
+
+- **API Contract**: `TokenStatusResponse.status` is now an enum (`active`/`revoked`, snake_case), and token revocation is idempotent—repeat requests return 200 with current state. Tests updated accordingly.
+- **Bloom Ops**: Added sizing cheat-sheets (entries/FPR/memory) and clarified that rising FPR should be handled by increasing entries, not rebuilds. `api_redeem_bloom_db_miss_total` remains the drift signal.
+- **Dust Floor Sample**: `.env.example` now recommends `MONITOR_MIN_PAYMENT_AMOUNT=10_000_000_000` (~0.01 XMR) to raise the economic cost of stuffing PIDs; README tables document the higher default along with the new Bloom guidance.
+- **Config Default**: `BootstrapConfig` default `MONITOR_MIN_PAYMENT_AMOUNT` raised to `10_000_000_000` (was `1_000_000`).
+
 e7be3447d3c09f5a8d57ba732a2d56e928f2f3b0 feat(monitor): drop dust payments below threshold
 
 - **Config**: Added optional `MONITOR_MIN_PAYMENT_AMOUNT` to `BootstrapConfig` (default `1_000_000` atomic units) with parsing tests to enforce trimmed, numeric input.

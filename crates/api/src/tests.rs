@@ -14,7 +14,9 @@ use chrono::Utc;
 
 use crate::handlers::{
     redeem::{redeem_handler, RedeemRequest, RedeemResponse},
-    token::{revoke_token_handler, token_status_handler, RevokeRequest, TokenStatusResponse},
+    token::{
+        revoke_token_handler, token_status_handler, RevokeRequest, TokenState, TokenStatusResponse,
+    },
 };
 use crate::state::AppState;
 
@@ -358,5 +360,5 @@ async fn revoke_token_is_internal_only_and_revokes() {
     assert_eq!(status_resp.status(), actix_web::http::StatusCode::OK);
     let parsed: TokenStatusResponse =
         serde_json::from_slice(&to_bytes(status_resp.into_body()).await.unwrap()).unwrap();
-    assert_eq!(parsed.status, "revoked");
+    assert_eq!(parsed.status, TokenState::Revoked);
 }

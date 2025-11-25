@@ -96,7 +96,7 @@ pub struct BootstrapConfig {
     monitor_min_confirmations: u64,
 }
 
-const DEFAULT_MIN_PAYMENT_AMOUNT: i64 = 1_000_000;
+const DEFAULT_MIN_PAYMENT_AMOUNT: i64 = 10_000_000_000; // 0.01 XMR in atomic units
 const DEFAULT_MONITOR_POLL_INTERVAL_SECS: u64 = 5;
 const DEFAULT_MONITOR_MIN_CONFIRMATIONS: u64 = 10;
 

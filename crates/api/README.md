@@ -39,6 +39,11 @@ Configured via environment variables.
 | `API_PID_BLOOM_FP_RATE` | False-positive rate for the Bloom filter (0-1). | `0.01` |
 | `API_ALLOW_NO_BLOOM` | Dev-only escape hatch to run without a Bloom filter (not recommended). | `None` |
 
+Bloom sizing cheat-sheet (memory per Bloom): `n=1e6,p=1e-4` → ~2.4 MB (k≈14);
+`n=1e6,p=1e-6` → ~3.6 MB (k≈20); `n=1e7,p=1e-4` → ~24 MB. Monitor
+`api_redeem_bloom_db_miss_total` to catch FPR drift; prefer increasing entries
+over rebuilds (correctness already preserved by DB lookups).
+
 ## 📚 API Reference
 
 ### Public Endpoints
@@ -51,6 +56,7 @@ Exchanges a Payment ID for a Service Token.
 #### `GET /api/v1/token/{token}`
 Checks the status of a Service Token.
 - **Response**: `{ "status": "active|revoked", "amount": 1000, ... }`
+  - `status` is an enum serialized as `active` or `revoked`.
 
 ### Internal Endpoints
 
@@ -61,6 +67,7 @@ Prometheus metrics exposition.
 **Admin Only**. Revokes a token immediately.
 - **Body**: `{ "reason": "abuse", "abuse_score": 100 }`
 - **Response**: `{ "status": "revoked", ... }`
+- Idempotent: revoking an already-revoked token returns 200 with its current state.
 
 ## 📦 Usage
 

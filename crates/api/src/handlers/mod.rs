@@ -21,8 +21,6 @@ pub enum ApiError {
     InvalidToken(#[from] TokenFormatError),
     #[error("payment not found")]
     NotFound,
-    #[error("token already revoked")]
-    AlreadyRevoked,
     #[error("storage failure: {0}")]
     Storage(#[from] StorageError),
 }
@@ -33,7 +31,6 @@ impl ResponseError for ApiError {
             ApiError::InvalidPid(_) => StatusCode::BAD_REQUEST,
             ApiError::InvalidToken(_) => StatusCode::BAD_REQUEST,
             ApiError::NotFound => StatusCode::NOT_FOUND,
-            ApiError::AlreadyRevoked => StatusCode::CONFLICT,
             ApiError::Storage(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }

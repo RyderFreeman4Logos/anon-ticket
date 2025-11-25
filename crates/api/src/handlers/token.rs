@@ -9,9 +9,16 @@ use crate::state::AppState;
 
 use super::ApiError;
 
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone, Copy)]
+#[serde(rename_all = "snake_case")]
+pub enum TokenState {
+    Active,
+    Revoked,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TokenStatusResponse {
-    pub status: String,
+    pub status: TokenState,
     pub amount: i64,
     pub issued_at: DateTime<Utc>,
     pub revoked_at: Option<DateTime<Utc>>,
@@ -37,13 +44,17 @@ pub async fn token_status_handler(
         }
     };
     let status = if record.revoked_at.is_some() {
-        "revoked"
+        TokenState::Revoked
     } else {
-        "active"
+        TokenState::Active
     };
-    counter!("api_token_requests_total", 1, "endpoint" => "status", "status" => status);
+    let status_tag = match status {
+        TokenState::Active => "active",
+        TokenState::Revoked => "revoked",
+    };
+    counter!("api_token_requests_total", 1, "endpoint" => "status", "status" => status_tag);
     Ok(HttpResponse::Ok().json(TokenStatusResponse {
-        status: status.to_string(),
+        status,
         amount: record.amount,
         issued_at: record.issued_at,
         revoked_at: record.revoked_at,
@@ -66,7 +77,13 @@ pub async fn revoke_token_handler(
     };
     if existing.revoked_at.is_some() {
         counter!("api_token_requests_total", 1, "endpoint" => "revoke", "status" => "already_revoked");
-        return Err(ApiError::AlreadyRevoked);
+        return Ok(HttpResponse::Ok().json(TokenStatusResponse {
+            status: TokenState::Revoked,
+            amount: existing.amount,
+            issued_at: existing.issued_at,
+            revoked_at: existing.revoked_at,
+            abuse_score: existing.abuse_score,
+        }));
     }
     let updated = state
         .storage()
@@ -79,7 +96,7 @@ pub async fn revoke_token_handler(
         .ok_or(ApiError::NotFound)?;
     counter!("api_token_requests_total", 1, "endpoint" => "revoke", "status" => "revoked");
     Ok(HttpResponse::Ok().json(TokenStatusResponse {
-        status: "revoked".to_string(),
+        status: TokenState::Revoked,
         amount: updated.amount,
         issued_at: updated.issued_at,
         revoked_at: updated.revoked_at,

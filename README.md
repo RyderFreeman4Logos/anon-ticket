@@ -72,7 +72,7 @@ so that the workspace builds end-to-end. Replace these stubs incrementally as th
     and `MONITOR_START_HEIGHT` via `BootstrapConfig`; optional
     `MONITOR_POLL_INTERVAL_SECS` (default `5`),
     `MONITOR_MIN_CONFIRMATIONS` (default `10`), and
-    `MONITOR_MIN_PAYMENT_AMOUNT` (default `1_000_000`) tune load shedding and
+    `MONITOR_MIN_PAYMENT_AMOUNT` (default `10_000_000_000` ≈ 0.01 XMR) tune load shedding and
     reorg safety.
    - Optional telemetry knobs (`<PREFIX>_LOG_FILTER`, `<PREFIX>_METRICS_ADDRESS`)
      tune tracing verbosity and Prometheus listeners without blocking startup.
@@ -168,6 +168,15 @@ and capacity (`API_PID_CACHE_CAPACITY`, default 100k). Bloom/cache are updated
 only after confirmed storage hits so missing PIDs never pollute the filter. The
 abstractions live in `anon_ticket_domain` and can be swapped for Redis or other
 backends later.
+
+Bloom sizing guidance: choose `API_PID_BLOOM_ENTRIES` to match the expected
+unique PID count over the Bloom’s lifetime. Memory estimate:
+`m ≈ n * ln(1/p) / (ln 2)^2` bits (n=entries, p=false-positive rate). Examples:
+`n=1e6,p=1e-4` → ~2.4 MB (k≈14); `n=1e6,p=1e-6` → ~3.6 MB (k≈20);
+`n=1e7,p=1e-4` → ~24 MB; `n=1e8,p=1e-4` → ~240 MB. Tighten p if memory allows;
+otherwise accept more DB lookups. Track `api_redeem_bloom_db_miss_total` to spot
+FPR drift; increasing entries is preferred over rebuilds (correctness is
+maintained—worst case the system falls back to DB queries).
 
 ### Metrics & Abuse Detection
 
