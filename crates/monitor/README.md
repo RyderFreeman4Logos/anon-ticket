@@ -43,7 +43,7 @@ The monitor emits Prometheus-friendly metrics via the shared telemetry module:
 - `monitor_last_height` (gauge) – last persisted chain height.
 - `monitor_payments_ingested_total{result="persisted|dust|invalid_pid"}` – ingestion decisions.
 
-Adjust `MONITOR_POLL_INTERVAL_SECS` and log filters (`MONITOR_LOG_FILTER`) to balance freshness against RPC/database load. Metrics are exposed when `MONITOR_METRICS_ADDRESS` is set.
+Adjust `MONITOR_POLL_INTERVAL_SECS` and log filters (`MONITOR_LOG_FILTER`) to balance freshness against RPC/database load. Metrics are exported via the shared API telemetry (`/metrics` on the internal listener).
 
 ## 📦 Usage
 

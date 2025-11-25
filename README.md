@@ -201,10 +201,9 @@ it with `--disable-rpc-login` or only behind a trusted proxy). If you need
 Digest/Basic auth, place a proxy in front of the wallet that terminates those
 schemes and forwards anonymous requests to the monitor.
 
-Optional telemetry settings mirror the API (`MONITOR_LOG_FILTER`,
-`MONITOR_METRICS_ADDRESS`). When `MONITOR_METRICS_ADDRESS` is provided, the
-monitor automatically exposes Prometheus metrics (RPC successes/failures, batch
-sizes, ingested payments) so ops can visualize sync progress.
+Optional telemetry setting mirrors the API (`MONITOR_LOG_FILTER`). The embedded
+monitor shares the API process telemetry; Prometheus scraping stays on
+`/metrics` of the internal listener.
 
 The binary tracks the last processed height in the storage layer so it can
 resume after restarts. It only ingests transfers at or below
