@@ -158,29 +158,26 @@ revoke endpoint is disabled (public requests return 404).
   `{ "reason": "...", "abuse_score": 5 }` to mark a service token as revoked.
   Public listeners return 404 for this route.
 
-### PID Cache
+### PID Filter & Cache
 
-The API keeps an in-memory PID cache (`InMemoryPidCache`) that records PIDs
-observed via storage lookups. Negative entries short-circuit repeated probes for
-roughly 500ms (configurable via `API_PID_CACHE_NEGATIVE_GRACE_MS`) without
-hitting the database, then the handler re-validates against storage. Entries
-also expire after a configurable TTL (`API_PID_CACHE_TTL_SECS`, default 60s) and
-respect a tunable capacity (`API_PID_CACHE_CAPACITY`, default 100k) so
-legitimate clients can retry once the monitor catches up. A Bloom filter
-(`API_PID_BLOOM_ENTRIES`, `API_PID_BLOOM_FP_RATE`, defaults 100k / 0.01) provides
-an additional hint path with zero expected false negatives (false positives
-allowed), ensuring we never block real payments while still reducing cache
-short-circuiting noise. The abstractions live in `anon_ticket_domain` so they
-can be swapped for Redis or other backends later.
+Redemption is fronted by a Bloom filter (`API_PID_BLOOM_ENTRIES`,
+`API_PID_BLOOM_FP_RATE`; disable only with `API_ALLOW_NO_BLOOM=1` for dev). A
+Bloom negative returns 404 immediately without touching cache or storage. The
+in-memory cache (`InMemoryPidCache`) is now positive-only: it holds known PIDs
+prewarmed from storage/monitor with TTL (`API_PID_CACHE_TTL_SECS`, default 60s)
+and capacity (`API_PID_CACHE_CAPACITY`, default 100k). Bloom/cache are updated
+only after confirmed storage hits so missing PIDs never pollute the filter. The
+abstractions live in `anon_ticket_domain` and can be swapped for Redis or other
+backends later.
 
 ### Metrics & Abuse Detection
 
 `anon_ticket_api` exposes Prometheus-compatible metrics at `GET /metrics`,
 backed by the shared telemetry module. Set `API_METRICS_ADDRESS` if you prefer
 the exporter to run on a dedicated port. The API increments counters for each
-redeem/token request outcome and tags cache hints (`absent_blocked` / `absent_probe`)
-so you can alert on spikes in invalid PID traffic even without a dedicated abuse
-tracker.
+redeem/token request outcome, tags Bloom hints (`bloom_absent` /
+`bloom_positive`), and reports `api_redeem_bloom_db_miss_total` to surface Bloom
+false positives that still reach storage.
 
 ## Monitor Service
 

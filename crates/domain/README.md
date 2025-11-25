@@ -12,7 +12,7 @@ The **Shared Kernel** of the anon-ticket workspace. This crate contains the core
 
 ### `services`
 **Reusable Infrastructure.**
-- **`cache`**: A high-performance `moka`-based caching layer implementing the "Negative Cache" pattern to protect the database from DoS attacks.
+- **`cache`**: A high-performance `moka`-based positive cache plus Bloom helpers to keep known-good PIDs hot and front-stop random probes before they reach storage.
 - **`telemetry`**: A unified observability stack that wires up `tracing` and `prometheus` metrics with consistent configuration across all binaries.
 
 ### `storage`

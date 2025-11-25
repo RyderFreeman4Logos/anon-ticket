@@ -31,7 +31,7 @@ We use a shared `AppState` wrapped in `Arc` to ensure data consistency across bo
 ```rust
 pub struct AppState {
     storage: SeaOrmStorage,        // Async DB Pool
-    cache: Arc<InMemoryPidCache>,  // Shared Negative Cache
+    cache: Arc<InMemoryPidCache>,  // Shared positive cache (prewarmed)
     telemetry: TelemetryGuard,     // Shared Metrics Registry
 }
 ```
@@ -39,8 +39,8 @@ pub struct AppState {
 ### Atomic Redemption
 The `/redeem` handler relies on the Storage layer's `claim_payment` method, which uses `UPDATE ... RETURNING` to ensure that a payment can be claimed exactly once, even under high concurrency.
 
-### Negative Caching
-To prevent cache-penetration DoS attacks (where attackers flood the API with random PIDs to hammer the database), we maintain a short-lived `InMemoryPidCache`. It tracks PIDs that recently returned "Not Found" and blocks repeated lookups for a grace period (`500ms`).
+### Bloom Front-Door
+Redeem requests are first checked against a Bloom filter sized via `API_PID_BLOOM_ENTRIES` / `API_PID_BLOOM_FP_RATE`; a negative result returns 404 without touching storage. The in-memory PID cache is positive-only and prewarmed from storage/monitor so known-good PIDs remain fast while unknown probes are rejected early by the Bloom. Bloom false positives are tracked via `api_redeem_bloom_db_miss_total`.
 
 ## 3. Security Considerations
 
