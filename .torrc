@@ -1,0 +1,28 @@
+# Tor configuration for anon-ticket
+# This file intentionally disables the local SOCKS listener (SocksPort 0)
+# to avoid binding conflicts; the service is expected to run headless.
+
+## General runtime settings
+DataDirectory ./tor-data
+SocksPort 0
+# Optional: expose control via a Unix socket (preferred) for tooling/scripts
+ControlSocket ./tor-control.sock
+CookieAuthentication 1
+CookieAuthFileGroupReadable 1
+
+## Built-in PoW / DoS defenses for onion services
+HiddenServiceEnableIntroDoSDefense 1
+HiddenServiceStatistics 0
+
+## Hidden Service (placeholder)
+# Replace <path> with a persistent directory (must be readable/writable by tor)
+HiddenServiceDir ./hidden_service
+HiddenServiceVersion 3
+# Map virtual port 80 of the onion to your internal listener (example: 127.0.0.1:8080)
+HiddenServicePort 80 127.0.0.1:8080
+# Add more ports as needed:
+# HiddenServicePort 443 127.0.0.1:8443
+
+## Logging (adjust as needed)
+#Log notice stdout
+#Log info stdout
