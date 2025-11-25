@@ -248,3 +248,6 @@ e33dd7c... docs(api): add design and readme
 
 - Added `crates/api/DESIGN.md` detailing the Dual-Listener architecture and security model.
 - Added `crates/api/README.md` with configuration reference and API specs.
+d33171d... docs(api): clarify dos protection strategy
+
+- Clarified in `crates/api/DESIGN.md` that DoS protection relies on internal Negative Caching rather than IP rate-limiting (which is ineffective for Tor services).
