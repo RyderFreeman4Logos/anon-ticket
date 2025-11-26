@@ -61,8 +61,8 @@ where
             }
         };
 
-        gauge!("monitor_wallet_height", wallet_height as f64);
-        gauge!("monitor_last_height", height as f64);
+        gauge!("monitor_wallet_height").set(wallet_height as f64);
+        gauge!("monitor_last_height").set(height as f64);
 
         let safe_height = wallet_height
             .saturating_add(1)
@@ -110,7 +110,7 @@ where
     let transfers = match source.fetch_transfers(*current_height, safe_height).await {
         Ok(resp) => resp,
         Err(err) => {
-            counter!("monitor_rpc_calls_total", 1, "result" => "error");
+            counter!("monitor_rpc_calls_total", "result" => "error").increment(1);
             return Err(err);
         }
     };
@@ -137,8 +137,8 @@ async fn handle_batch<D>(
 where
     D: MonitorStateStore + PaymentStore,
 {
-    counter!("monitor_rpc_calls_total", 1, "result" => "ok");
-    histogram!("monitor_batch_entries", transfers.incoming.len() as f64);
+    counter!("monitor_rpc_calls_total", "result" => "ok").increment(1);
+    histogram!("monitor_batch_entries").record(transfers.incoming.len() as f64);
 
     let mut observed_height: Option<u64> = None;
 
@@ -158,7 +158,7 @@ where
     next_height = next_height.min(safe_height.saturating_add(1));
 
     storage.upsert_last_processed_height(next_height).await?;
-    gauge!("monitor_last_height", next_height as f64);
+    gauge!("monitor_last_height").set(next_height as f64);
     *current_height = next_height;
     Ok(())
 }

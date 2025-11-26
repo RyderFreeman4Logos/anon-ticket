@@ -34,7 +34,7 @@ pub async fn run() -> Result<(), BootstrapError> {
     let monitor_config = maybe_load_monitor_config()?;
     let telemetry_config = TelemetryConfig::from_env("API");
     let telemetry = init_telemetry(&telemetry_config)?;
-    gauge!("api_up", 1.0);
+    gauge!("api_up").set(1.0);
     let storage = SeaOrmStorage::connect(api_config.database_url()).await?;
     let cache_ttl = Duration::from_secs(
         api_config

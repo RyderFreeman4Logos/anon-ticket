@@ -41,7 +41,8 @@ pub async fn token_status_handler(
     let record = match state.storage().find_token(&token).await? {
         Some(record) => record,
         None => {
-            counter!("api_token_requests_total", 1, "endpoint" => "status", "status" => "not_found");
+            counter!("api_token_requests_total", "endpoint" => "status", "status" => "not_found")
+                .increment(1);
             return Err(ApiError::NotFound);
         }
     };
@@ -51,7 +52,8 @@ pub async fn token_status_handler(
         TokenState::Active
     };
     let status_tag = status.as_ref().to_owned();
-    counter!("api_token_requests_total", 1, "endpoint" => "status", "status" => status_tag);
+    counter!("api_token_requests_total", "endpoint" => "status", "status" => status_tag)
+        .increment(1);
     Ok(HttpResponse::Ok().json(TokenStatusResponse {
         status,
         amount: record.amount,
@@ -70,12 +72,18 @@ pub async fn revoke_token_handler(
     let existing = match state.storage().find_token(&token).await? {
         Some(record) => record,
         None => {
-            counter!("api_token_requests_total", 1, "endpoint" => "revoke", "status" => "not_found");
+            counter!("api_token_requests_total", "endpoint" => "revoke", "status" => "not_found")
+                .increment(1);
             return Err(ApiError::NotFound);
         }
     };
     if existing.revoked_at.is_some() {
-        counter!("api_token_requests_total", 1, "endpoint" => "revoke", "status" => "already_revoked");
+        counter!(
+            "api_token_requests_total",
+            "endpoint" => "revoke",
+            "status" => "already_revoked"
+        )
+        .increment(1);
         return Ok(HttpResponse::Ok().json(TokenStatusResponse {
             status: TokenState::Revoked,
             amount: existing.amount,
@@ -93,7 +101,8 @@ pub async fn revoke_token_handler(
         })
         .await?
         .ok_or(ApiError::NotFound)?;
-    counter!("api_token_requests_total", 1, "endpoint" => "revoke", "status" => "revoked");
+    counter!("api_token_requests_total", "endpoint" => "revoke", "status" => "revoked")
+        .increment(1);
     Ok(HttpResponse::Ok().json(TokenStatusResponse {
         status: TokenState::Revoked,
         amount: updated.amount,

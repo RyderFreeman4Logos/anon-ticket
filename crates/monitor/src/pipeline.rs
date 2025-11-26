@@ -29,9 +29,9 @@ where
         );
         counter!(
             "monitor_payments_ingested_total",
-            1,
             "result" => "dust"
-        );
+        )
+        .increment(1);
         return Ok(false);
     }
 
@@ -40,7 +40,7 @@ where
         Ok(pid) => pid,
         Err(_) => {
             warn!(pid, "skipping invalid pid");
-            counter!("monitor_payments_ingested_total", 1, "result" => "invalid_pid");
+            counter!("monitor_payments_ingested_total", "result" => "invalid_pid").increment(1);
             return Ok(false);
         }
     };
@@ -57,7 +57,7 @@ where
     if let Some(hooks) = hooks {
         hooks.mark_present(&pid);
     }
-    counter!("monitor_payments_ingested_total", 1, "result" => "persisted");
+    counter!("monitor_payments_ingested_total", "result" => "persisted").increment(1);
 
     Ok(true)
 }

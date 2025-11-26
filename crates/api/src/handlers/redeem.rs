@@ -30,17 +30,17 @@ pub async fn redeem_handler(
     payload: web::Json<RedeemRequest>,
 ) -> Result<HttpResponse, ApiError> {
     let pid = PaymentId::parse(&payload.pid).inspect_err(|_| {
-        counter!("api_redeem_requests_total", 1, "status" => "invalid_pid");
+        counter!("api_redeem_requests_total", "status" => "invalid_pid").increment(1);
     })?;
 
     let bloom_positive = state.bloom().map(|b| b.might_contain(&pid));
     if let Some(hit) = bloom_positive {
         if !hit {
-            counter!("api_redeem_cache_hints_total", 1, "hint" => "bloom_absent");
-            counter!("api_redeem_requests_total", 1, "status" => "bloom_absent");
+            counter!("api_redeem_cache_hints_total", "hint" => "bloom_absent").increment(1);
+            counter!("api_redeem_requests_total", "status" => "bloom_absent").increment(1);
             return Err(ApiError::NotFound);
         }
-        counter!("api_redeem_cache_hints_total", 1, "hint" => "bloom_positive");
+        counter!("api_redeem_cache_hints_total", "hint" => "bloom_positive").increment(1);
     }
 
     match state.storage().claim_payment(&pid).await? {
@@ -65,7 +65,7 @@ async fn handle_success(
             abuse_score: 0,
         })
         .await?;
-    counter!("api_redeem_requests_total", 1, "status" => "success");
+    counter!("api_redeem_requests_total", "status" => "success").increment(1);
     state.cache().mark_present(&pid);
     state.insert_bloom(&pid);
 
@@ -83,20 +83,21 @@ async fn handle_absent(
             state.cache().mark_present(&pid);
             state.insert_bloom(&pid);
             let token = ensure_token_record(state, &pid, &record).await?;
-            counter!("api_redeem_requests_total", 1, "status" => "already_claimed");
+            counter!("api_redeem_requests_total", "status" => "already_claimed").increment(1);
             Ok(HttpResponse::Ok().json(build_redeem_response("already_claimed", token)))
         }
         Some(_) => {
             state.cache().mark_present(&pid);
             state.insert_bloom(&pid);
-            counter!("api_redeem_requests_total", 1, "status" => "pending");
+            counter!("api_redeem_requests_total", "status" => "pending").increment(1);
             Err(ApiError::NotFound)
         }
         None => {
             if bloom_positive {
-                counter!("api_redeem_bloom_db_miss_total", 1, "hit" => "positive_db_miss");
+                counter!("api_redeem_bloom_db_miss_total", "hit" => "positive_db_miss")
+                    .increment(1);
             }
-            counter!("api_redeem_requests_total", 1, "status" => "not_found");
+            counter!("api_redeem_requests_total", "status" => "not_found").increment(1);
             Err(ApiError::NotFound)
         }
     }
