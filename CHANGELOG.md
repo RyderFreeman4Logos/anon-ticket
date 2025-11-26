@@ -237,6 +237,12 @@ e6c663e76c33880ad4cd7e510a50da0f19038359 feat(domain): add wasm feature flag and
 
 - Updated `DESIGN.md` and `README.md` to accurately describe the 8-byte Compact PID schema.
 
+3cf9d00 fix(metrics): align macros with exporter
+
+- **Compatibility**: Bumped workspace `metrics` to 0.22 to match the Prometheus exporter and avoid double-recorders that left `/metrics` empty.
+- **Instrumentation**: Updated all counters/gauges/histograms to the 0.22 handle-based API so baseline metrics now render correctly.
+- **Verification**: Ran `cargo fmt --all`, `cargo clippy --workspace --all-features -- -D warnings`, and `cargo test --all --all-features` (upstream `sqlx-postgres` future-incompat warning persists).
+
 5691e1e fix(metrics): emit baseline gauges
 
 - **Observability**: Monitor loop now records `monitor_wallet_height` and `monitor_last_height` every poll so `/metrics` is non-empty and exposes scan progress even before the first batch is processed.
