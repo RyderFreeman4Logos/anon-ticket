@@ -1,6 +1,32 @@
 [advisories]
 db-path = "https://github.com/rustsec/advisory-db"
-ignore = []
+ignore = [
+    # RUSTSEC-2024-0363: sqlx binary protocol misinterpretation (>4GiB data overflow)
+    # Not exploitable in this project because:
+    #   1. Default backend is SQLite (not affected per advisory)
+    #   2. Largest field is 64 bytes (token); nowhere near 4GiB trigger threshold
+    #   3. All inputs are strictly validated (PID: 16 hex, Token: 64 hex)
+    # TODO: Upgrade sea-orm 0.12 → 1.1+ when convenient to get sqlx 0.8 fix
+    "RUSTSEC-2024-0363",
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Unmaintained transitive dependencies from sea-orm 0.12 / sqlx 0.7
+    # These are NOT security vulnerabilities, just "unmaintained" notices.
+    # All will be resolved when upgrading to sea-orm 1.1+ (uses sqlx 0.8).
+    # ─────────────────────────────────────────────────────────────────────────
+
+    # derivative: via sea-query → sea-orm
+    "RUSTSEC-2024-0388",
+
+    # paste: via sqlx-core → sqlx → sea-orm
+    "RUSTSEC-2024-0436",
+
+    # proc-macro-error: via ouroboros_macro → ouroboros → sea-orm
+    "RUSTSEC-2024-0370",
+
+    # rustls-pemfile: via sqlx-core → sqlx → sea-orm
+    "RUSTSEC-2025-0134",
+]
 
 [bans]
 multiple-versions = "warn"
